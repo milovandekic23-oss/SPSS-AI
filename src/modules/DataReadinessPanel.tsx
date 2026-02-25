@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react'
 import type { DatasetState } from '../types'
-import { checkDataReadiness, canProceedToTests, type DataReadinessResult, type ReadinessItem } from '../lib/dataReadiness'
+import {
+  checkDataReadiness,
+  canProceedToTests,
+  removeDuplicateRows,
+  winsorizeVariable,
+  removeOutlierRowsByIQR,
+  type DataReadinessResult,
+  type ReadinessItem,
+} from '../lib/dataReadiness'
 import { theme } from '../theme'
 
 interface DataReadinessPanelProps {
@@ -40,6 +48,34 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
     }
     onDatasetChange(next)
   }
+
+  const handleRemoveDuplicates = () => {
+    if (!dataset || !onDatasetChange) return
+    const uniqueRows = removeDuplicateRows(dataset.rows)
+    onDatasetChange({ ...dataset, rows: uniqueRows })
+  }
+
+  const handleWinsorize = (varName: string) => {
+    if (!dataset || !onDatasetChange) return
+    onDatasetChange(winsorizeVariable(dataset, varName))
+  }
+
+  const handleRemoveOutliers = (varName: string) => {
+    if (!dataset || !onDatasetChange) return
+    onDatasetChange(removeOutlierRowsByIQR(dataset, varName))
+  }
+
+  const btn = {
+    marginTop: 6,
+    marginRight: 8,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer' as const,
+    background: theme.colors.surface,
+    border: `1px solid ${theme.colors.border}`,
+    borderRadius: 4,
+  }
+  const btnPrimary = { ...btn, background: theme.colors.accent, color: '#fff', border: 'none' }
 
   if (!result || !dataset) return null
 
@@ -118,21 +154,24 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
                     </div>
                   )}
                   {item.variable && item.category === 'missing' && onDatasetChange && (
-                    <button
-                      type="button"
-                      onClick={() => handleExcludeFromAnalysis(item.variable!)}
-                      style={{
-                        marginTop: 6,
-                        padding: '4px 10px',
-                        fontSize: 12,
-                        cursor: 'pointer',
-                        background: theme.colors.surface,
-                        border: `1px solid ${theme.colors.border}`,
-                        borderRadius: 4,
-                      }}
-                    >
+                    <button type="button" onClick={() => handleExcludeFromAnalysis(item.variable!)} style={btn}>
                       Exclude from analysis
                     </button>
+                  )}
+                  {item.id === 'duplicate-rows' && onDatasetChange && (
+                    <button type="button" onClick={handleRemoveDuplicates} style={btnPrimary}>
+                      Remove duplicate rows
+                    </button>
+                  )}
+                  {item.category === 'outliers' && item.variable && onDatasetChange && (
+                    <span style={{ display: 'inline-block', marginTop: 6 }}>
+                      <button type="button" onClick={() => handleWinsorize(item.variable!)} style={btnPrimary}>
+                        Winsorize (recommended)
+                      </button>
+                      <button type="button" onClick={() => handleRemoveOutliers(item.variable!)} style={btn}>
+                        Remove outlier rows
+                      </button>
+                    </span>
                   )}
                 </li>
               )

@@ -374,3 +374,61 @@ export function checkDataReadiness(dataset: DatasetState): DataReadinessResult {
 export function canProceedToTests(result: DataReadinessResult): boolean {
   return result.level !== 'not_ready'
 }
+
+// ----- ONE-CLICK ACTIONS (used by DataReadinessPanel) -----
+
+/** Remove fully duplicate rows; keep first occurrence of each unique row. */
+export function removeDuplicateRows(rows: DataRow[]): DataRow[] {
+  const seen = new Set<string>()
+  return rows.filter((r) => {
+    const k = JSON.stringify(r)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
+
+/** Winsorize a scale variable: cap values at lowPct and highPct percentiles. Preserves sample size. */
+export function winsorizeVariable(
+  dataset: DatasetState,
+  varName: string,
+  lowPct = 5,
+  highPct = 95
+): DatasetState {
+  const v = dataset.variables.find((x) => x.name === varName)
+  const missingCodes = v?.missingCodes ?? []
+  const vals = getNumericValues(dataset.rows, varName, missingCodes)
+  if (vals.length < 2) return dataset
+  const pLo = quantile(vals, lowPct / 100)
+  const pHi = quantile(vals, highPct / 100)
+  const rows = dataset.rows.map((row) => {
+    const x = row[varName]
+    if (isMissing(x, missingCodes)) return row
+    const num = Number(x)
+    if (Number.isNaN(num)) return row
+    const capped = num < pLo ? pLo : num > pHi ? pHi : num
+    return { ...row, [varName]: capped }
+  })
+  return { ...dataset, rows }
+}
+
+/** Remove rows where the variable's value is outside the IQR range (1.5×IQR rule). Reduces sample size. */
+export function removeOutlierRowsByIQR(dataset: DatasetState, varName: string): DatasetState {
+  const v = dataset.variables.find((x) => x.name === varName)
+  const missingCodes = v?.missingCodes ?? []
+  const vals = getNumericValues(dataset.rows, varName, missingCodes)
+  if (vals.length < 2) return dataset
+  const q1 = quantile(vals, 0.25)
+  const q3 = quantile(vals, 0.75)
+  const iqr = q3 - q1
+  const lo = q1 - 1.5 * iqr
+  const hi = q3 + 1.5 * iqr
+  const rows = dataset.rows.filter((row) => {
+    const x = row[varName]
+    if (isMissing(x, missingCodes)) return true
+    const num = Number(x)
+    if (Number.isNaN(num)) return true
+    return num >= lo && num <= hi
+  })
+  return { ...dataset, rows }
+}
