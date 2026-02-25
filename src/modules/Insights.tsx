@@ -1,81 +1,184 @@
 import { useState } from 'react'
 import type { DatasetState } from '../types'
+import { runInsightsReport, getHeadline, type InsightsReport, type ReportFinding } from '../lib/insightsReport'
+import { TestResultPanel } from './TestResultPanel'
 
 interface InsightsProps {
   dataset: DatasetState
 }
 
 export function Insights({ dataset }: InsightsProps) {
-  const [question, setQuestion] = useState('')
-  const [insight, setInsight] = useState<string | null>(null)
+  const [report, setReport] = useState<InsightsReport | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleAsk = () => {
-    if (!question.trim()) return
-    // Placeholder: in a full implementation, this would call an AI or local analysis
-    // and render a chart (Recharts) + 2–4 sentence insight.
-    setInsight(
-      `📌 INSIGHT (placeholder)\nYou asked: "${question.trim()}"\n\n` +
-        `With ${dataset.variables.length} variables and ${dataset.rows.length} rows, the assistant would run the ` +
-        `appropriate analysis, show a chart (bar/histogram/scatter/pie/boxplot), and write a 2–4 sentence ` +
-        `summary in plain language. Add an AI backend or client-side stats (e.g. simple-correlation, jStat) ` +
-        `to power this module.`
-    )
+  const handleGenerate = () => {
+    setLoading(true)
+    try {
+      const next = runInsightsReport(dataset)
+      setReport(next)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <section>
-      <h2>Insights & Chart Generator</h2>
-      <p>Ask questions about your data in plain language. Examples:</p>
-      <ul style={{ color: '#555', marginBottom: 16 }}>
-        <li>Which variable has the most missing data?</li>
-        <li>What&apos;s the relationship between age and income?</li>
-        <li>Show me the distribution of responses for Q3.</li>
-        <li>Are there any outliers? Summarize key findings.</li>
-      </ul>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input
-          type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-          placeholder="e.g. Which variable has the most missing data?"
-          style={{
-            flex: 1,
-            padding: '0.5rem 10px',
-            borderRadius: 6,
-            border: '1px solid #bdc3c7',
-            fontSize: 16,
-          }}
-        />
-        <button
-          type="button"
-          onClick={handleAsk}
-          style={{
-            padding: '0.5rem 1rem',
-            background: '#9b59b6',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          Ask
-        </button>
-      </div>
-      {insight && (
-        <div
-          style={{
-            padding: 16,
-            background: '#f4ecf7',
-            borderLeft: '4px solid #9b59b6',
-            borderRadius: 4,
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {insight}
-        </div>
+      <h2>Insights & Charts</h2>
+      <p style={{ color: '#2c3e50', marginBottom: 16 }}>
+        Generate a report from your data. The platform runs the applicable analyses and surfaces the main findings.
+        All insights are computed from your dataset — no external API is used.
+      </p>
+
+      {!report && (
+        <>
+          <p style={{ marginBottom: 12 }}>
+            Your dataset has <strong>{dataset.variables.length} variables</strong> and <strong>n = {dataset.rows.length}</strong> rows.
+          </p>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={loading}
+            style={{
+              padding: '0.5rem 1.25rem',
+              background: loading ? '#95a5a6' : '#3498db',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: loading ? 'default' : 'pointer',
+              fontWeight: 600,
+              fontSize: 15,
+            }}
+          >
+            {loading ? 'Generating report…' : 'Generate report'}
+          </button>
+        </>
+      )}
+
+      {report && report.findings.length === 0 && (
+        <p style={{ padding: 16, background: '#fef9e7', borderRadius: 8, color: '#7d6608' }}>
+          No analyses could be run with the current variable setup. Confirm Variable View (measurement levels) and try again.
+        </p>
+      )}
+
+      {report && report.findings.length > 0 && (
+        <ReportView report={report} onRegenerate={handleGenerate} loading={loading} />
       )}
     </section>
+  )
+}
+
+function ReportView({
+  report,
+  onRegenerate,
+  loading,
+}: {
+  report: InsightsReport
+  onRegenerate: () => void
+  loading: boolean
+}) {
+  const keyFindings = report.findings.filter((f) => f.isKey)
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div
+        style={{
+          padding: 16,
+          background: '#f8f9fa',
+          borderLeft: '4px solid #3498db',
+          borderRadius: 8,
+          marginBottom: 24,
+        }}
+      >
+        <p style={{ margin: 0, lineHeight: 1.5, color: '#2c3e50' }}>
+          <strong>What you’re seeing:</strong> The report below is built from analyses run on your data. Important findings are listed first; expand any section for the full table, chart, and interpretation. Every insight comes from computed results only — nothing is fabricated.
+        </p>
+      </div>
+
+      {keyFindings.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <h3 style={{ fontSize: 18, marginBottom: 12, color: '#2c3e50' }}>Key findings</h3>
+          <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6, color: '#34495e' }}>
+            {keyFindings.map((f, i) => (
+              <li key={i} style={{ marginBottom: 6 }}>
+                {f.validation.consistent ? (
+                  <span>{getHeadline(f.result)}</span>
+                ) : (
+                  <span>
+                    {getHeadline(f.result)}
+                    <span style={{ color: '#e67e22', fontSize: 12, marginLeft: 6 }}>
+                      (Check details: {f.validation.issues.join('; ')})
+                    </span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <h3 style={{ fontSize: 18, marginBottom: 12, color: '#2c3e50' }}>Full report</h3>
+      <p style={{ fontSize: 14, color: '#6c757d', marginBottom: 16 }}>
+        Expand any section to see the full table, chart, and what the result means.
+      </p>
+
+      {report.findings.map((finding, index) => (
+        <FindingBlock key={index} finding={finding} />
+      ))}
+
+      <div style={{ marginTop: 24 }}>
+        <button
+          type="button"
+          onClick={onRegenerate}
+          disabled={loading}
+          style={{
+            padding: '0.4rem 1rem',
+            background: loading ? '#bdc3c7' : '#ecf0f1',
+            color: '#2c3e50',
+            border: '1px solid #bdc3c7',
+            borderRadius: 6,
+            cursor: loading ? 'default' : 'pointer',
+            fontSize: 14,
+          }}
+        >
+          {loading ? 'Regenerating…' : 'Regenerate report'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function FindingBlock({ finding }: { finding: ReportFinding }) {
+  const { result, validation } = finding
+  const headline = getHeadline(result)
+  const summaryLabel = validation.consistent
+    ? headline
+    : `${headline} — ⚠ Check result`
+
+  return (
+    <details
+      style={{
+        marginBottom: 12,
+        border: '1px solid #bdc3c7',
+        borderRadius: 8,
+        background: '#fff',
+        overflow: 'hidden',
+      }}
+    >
+      <summary
+        style={{
+          padding: '12px 16px',
+          cursor: 'pointer',
+          fontWeight: 600,
+          fontSize: 14,
+          color: '#2c3e50',
+          listStyle: 'none',
+        }}
+      >
+        <span style={{ marginRight: 8 }}>▸</span> {summaryLabel}
+      </summary>
+      <div style={{ padding: '0 16px 16px', borderTop: '1px solid #ecf0f1' }}>
+        <TestResultPanel result={result} />
+      </div>
+    </details>
   )
 }

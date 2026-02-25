@@ -108,6 +108,13 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
   )
 }
 
+const MAX_LABEL_LENGTH = 80
+
+function truncateLabel(label: string): string {
+  if (label.length <= MAX_LABEL_LENGTH) return label
+  return label.slice(0, MAX_LABEL_LENGTH).trim() + '…'
+}
+
 function TestCard({
   testId,
   dataset,
@@ -129,37 +136,50 @@ function TestCard({
       data-testid={`test-card-${testId}`}
       style={{
         border: '1px solid #bdc3c7',
+        borderLeft: '4px solid #3498db',
         borderRadius: 8,
-        padding: 14,
+        padding: 16,
         background: '#fff',
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>✅ {guidance.name}</div>
-      <div style={{ fontSize: 13, color: '#555', marginBottom: 6 }}>
-        <strong>When to use:</strong> {guidance.whenToUse}
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>✅ {guidance.name}</div>
+      <div style={{ fontSize: 14, color: '#2c3e50', marginBottom: 10, lineHeight: 1.4 }}>
+        {guidance.summary}
       </div>
-      <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
-        <strong>Applies to:</strong> {guidance.forLevels}
-      </div>
-      <details style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
+      <details style={{ fontSize: 13, color: '#2c3e50', marginBottom: 8 }}>
         <summary style={{ cursor: 'pointer', listStyle: 'none' }}>
-          <strong>Analyzes:</strong>{' '}
+          <strong>Questions / variables in this analysis:</strong>{' '}
           {hasVars
             ? `${suggested.variables.length} variable${suggested.variables.length === 1 ? '' : 's'} — click to expand`
             : 'No matching variables — run anyway to see requirements'}
         </summary>
         {hasVars && (
-          <ul style={{ margin: '6px 0 0 16px', paddingLeft: 8 }}>
-            {suggested.variables.map((v, i) => (
-              <li key={`${v.name}-${v.role}-${i}`} style={{ marginBottom: 4 }}>
-                <span style={{ fontWeight: 500 }}>{v.label}</span>
-                <span style={{ color: '#6c757d', fontSize: 12 }}> ({v.role})</span>
-              </li>
-            ))}
+          <ul style={{ margin: '8px 0 0 16px', paddingLeft: 8 }}>
+            {suggested.variables.map((v, i) => {
+              const displayLabel = truncateLabel(v.label)
+              const showRole = v.role && v.role !== 'variable'
+              return (
+                <li key={`${v.name}-${v.role}-${i}`} style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 500 }} title={v.label.length > MAX_LABEL_LENGTH ? v.label : undefined}>
+                    {displayLabel}
+                  </span>
+                  {showRole && (
+                    <span style={{ color: '#6c757d', fontSize: 12 }}> ({v.role})</span>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </details>
-      <div style={{ fontSize: 12, marginBottom: 8 }} data-testid={`supervisor-${testId}`}>
+      <div style={{ fontSize: 13, color: '#555', marginBottom: 6 }}>
+        <strong>Applies to:</strong> {guidance.forLevels}
+      </div>
+      <details style={{ fontSize: 12, color: '#6c757d', marginBottom: 8 }}>
+        <summary style={{ cursor: 'pointer' }}>When to use (expand)</summary>
+        <p style={{ margin: '6px 0 0' }}>{guidance.whenToUse}</p>
+      </details>
+      <div style={{ fontSize: 12, marginBottom: 10 }} data-testid={`supervisor-${testId}`}>
         <strong>Supervisor:</strong>{' '}
         {choiceValidation.valid ? (
           <span style={{ color: '#27ae60' }}>
