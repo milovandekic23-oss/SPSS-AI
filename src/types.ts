@@ -24,7 +24,7 @@ export interface VariableMeta {
 }
 
 /** Type of multi-column question (survey-style) */
-export type QuestionGroupType = 'checkbox' | 'matrix' | 'ranking' | 'group'
+export type QuestionGroupType = 'checkbox' | 'multi_select' | 'matrix' | 'dropdown' | 'ranking' | 'group'
 
 /** Group of columns treated as one question (e.g. checkbox, matrix, ranking) */
 export interface QuestionGroup {

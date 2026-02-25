@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   DatasetState,
   VariableMeta,
@@ -9,6 +9,7 @@ import type {
   QuestionGroupType,
 } from '../types'
 import { parseCSV } from '../lib/csvParse'
+import { suggestQuestionGroups, applySuggestedQuestionGroups } from '../lib/questionGroups'
 import { styles, theme } from '../theme'
 
 const MEASUREMENT_LEVELS: { value: MeasurementLevel; label: string }[] = [
@@ -42,7 +43,9 @@ const VARIABLE_TYPE_LABELS: Record<VariableType, string> = {
 
 const QUESTION_GROUP_TYPES: { value: QuestionGroupType; label: string }[] = [
   { value: 'checkbox', label: 'Checkbox (multiple response)' },
-  { value: 'matrix', label: 'Matrix question' },
+  { value: 'multi_select', label: 'Multi-select (select up to N)' },
+  { value: 'matrix', label: 'Grid / Matrix' },
+  { value: 'dropdown', label: 'Dropdown (single choice)' },
   { value: 'ranking', label: 'Ranking' },
   { value: 'group', label: 'Group (other)' },
 ]
@@ -57,7 +60,7 @@ const COLUMN_TOOLTIPS: Record<string, string> = {
   'Missing %': 'Shows the share of empty or missing values (and any codes you define below). High missingness may bias results.',
   'Missing codes': 'Define values that count as missing (e.g. 99, 999, -1 or "Refused"). Comma-separated. These are excluded from all analyses.',
   'Value labels': 'Map each code to a display label (e.g. 1 = Strongly disagree, 5 = Strongly agree). Click "Add value labels…" to edit; used in frequency tables and reports.',
-  'Question group': 'Use the dropdown to assign this variable to a question group (e.g. checkbox set, matrix). Create groups in the "Question groups" section below, then select one here.',
+  'Question group': 'Assign this variable to a question group when several columns form one question (e.g. checkbox, multi-select, grid, dropdown, ranking). Create groups below, then assign here so the system treats them together.',
   'In analysis': 'Leave checked to include this variable in test suggestions and analyses. Uncheck to hide it from analyses (variable stays in the table).',
 }
 
@@ -205,8 +208,22 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [summaryAck, setSummaryAck] = useState(false)
   const [uploadHover, setUploadHover] = useState(false)
+  const [suggestedQuestionGroups, setSuggestedQuestionGroups] = useState<QuestionGroup[] | null>(null)
 
   const questionGroups: QuestionGroup[] = dataset?.questionGroups ?? []
+
+  useEffect(() => {
+    if (!dataset?.variables?.length || !dataset?.rows?.length) {
+      setSuggestedQuestionGroups(null)
+      return
+    }
+    if (dataset.questionGroups?.length > 0) {
+      setSuggestedQuestionGroups(null)
+      return
+    }
+    const suggested = suggestQuestionGroups(dataset)
+    setSuggestedQuestionGroups(suggested.length > 0 ? suggested : null)
+  }, [dataset?.variables, dataset?.rows, dataset?.questionGroups?.length])
 
   const getGroupIdForVariable = useCallback(
     (varName: string): string => {
@@ -421,6 +438,42 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
           </span>
         )}
       </p>
+      {suggestedQuestionGroups && suggestedQuestionGroups.length > 0 && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '12px 16px',
+            background: '#e8f4fd',
+            border: `1px solid ${theme.colors.accent}`,
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          <strong>Detected {suggestedQuestionGroups.length} possible question group(s)</strong>
+          <p style={{ margin: '6px 0 10px', opacity: 0.9 }}>
+            Columns that share a name prefix (e.g. Q5_1, Q5_2) were grouped. Assigning them lets the system treat multi-select, grid, and dropdown questions correctly (e.g. skip missing-data flags per option).
+          </p>
+          <span style={{ display: 'inline-flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                onDatasetChange(applySuggestedQuestionGroups(dataset, suggestedQuestionGroups))
+                setSuggestedQuestionGroups(null)
+              }}
+              style={{ ...styles.btn, ...styles.btnPrimary, marginTop: 0, padding: '6px 12px', fontSize: 13 }}
+            >
+              Apply suggestions
+            </button>
+            <button
+              type="button"
+              onClick={() => setSuggestedQuestionGroups(null)}
+              style={{ ...styles.btn, marginTop: 0, padding: '6px 12px', fontSize: 13, background: 'transparent' }}
+            >
+              Dismiss
+            </button>
+          </span>
+        </div>
+      )}
       {validationWarnings.length > 0 && (
         <div
           style={{
@@ -577,10 +630,10 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         </table>
       </div>
 
-      <div style={{ marginTop: 24 }} title="Group columns that belong to one question (e.g. checkbox set, matrix). Assign in the table above.">
+      <div style={{ marginTop: 24 }} title="Group columns that belong to one question (checkbox, multi-select, grid, dropdown, ranking). Assign in the table above.">
         <h3 style={{ ...styles.textLabel, marginBottom: 8, opacity: 0.6 }}>Question groups</h3>
         <p style={{ ...styles.textBody, margin: '0 0 10px' }}>
-          Assign variables in the table with the &quot;Question group&quot; column.
+          When several columns form one question (e.g. checkboxes, multi-select, grid, dropdown, ranking), create a group and assign those variables here. The system uses this to treat options together (e.g. skip missing-data flags per option) and to suggest analyses.
         </p>
         <button
           type="button"
@@ -618,7 +671,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     value={g.type}
                     onChange={(e) => updateGroup(g.id, { type: e.target.value as QuestionGroupType })}
                     style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ced4da' }}
-                    title="Checkbox = multiple response; Matrix = grid; Ranking = order; Group = other."
+                    title="Checkbox = multiple response; Multi-select = select up to N; Grid = matrix; Dropdown = single choice; Ranking = order; Group = other."
                   >
                     {QUESTION_GROUP_TYPES.map((o) => (
                       <option key={o.value} value={o.value}>

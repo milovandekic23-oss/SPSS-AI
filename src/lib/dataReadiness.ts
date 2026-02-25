@@ -100,7 +100,7 @@ function maxCategoryShare(rows: DataRow[], varName: string, missingCodes: (strin
 function multiResponseOptionVarNames(dataset: DatasetState): Set<string> {
   const set = new Set<string>()
   for (const g of dataset.questionGroups ?? []) {
-    if (g.type === 'checkbox' || g.type === 'matrix') {
+    if (g.type === 'checkbox' || g.type === 'multi_select' || g.type === 'matrix') {
       for (const name of g.variableNames ?? []) set.add(name)
     }
   }
