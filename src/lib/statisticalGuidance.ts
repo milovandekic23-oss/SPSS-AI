@@ -55,6 +55,14 @@ export const TEST_GUIDANCE: Record<TestId, TestGuidance> = {
     alternatives: 'If relationship is monotonic but not linear, or data are ordinal: use Spearman rank correlation. For non-linear association, consider scatterplot and possibly transformation.',
     forLevels: 'Scale × Scale',
   },
+  spearman: {
+    id: 'spearman',
+    name: 'Spearman rank correlation',
+    whenToUse: 'Use for two ordinal or scale variables when the relationship is monotonic but not necessarily linear. Robust to outliers and non-normality.',
+    assumptions: 'Monotonic relationship; ordinal comparison or ranks. No assumption of linearity or normality.',
+    alternatives: 'If relationship is linear and data are scale: Pearson correlation is more powerful. For nominal variables use crosstab and Chi-Square.',
+    forLevels: 'Scale × Scale or Ordinal × Ordinal',
+  },
   ttest: {
     id: 'ttest',
     name: 'Independent-samples t-test',
@@ -76,7 +84,7 @@ export const TEST_GUIDANCE: Record<TestId, TestGuidance> = {
     name: 'Linear regression',
     whenToUse: 'Use to predict a continuous outcome from one or more predictors (continuous or categorical). Reports coefficients, R², and significance. Check residuals for linearity and homoscedasticity.',
     assumptions: 'Linear relationship; independence of errors; constant variance of errors; approximate normality of errors. No strong multicollinearity among predictors.',
-    alternatives: 'If outcome is binary: logistic regression. If outcome is count: Poisson or negative binomial. If non-linear: add polynomial terms or use GAM.',
+    alternatives: 'If outcome is binary: logistic regression. If outcome is count: Poisson or negative binomial regression (not yet in app). If non-linear: add polynomial terms or use GAM.',
     forLevels: 'Scale outcome, one or more predictors',
   },
   logreg: {
@@ -84,7 +92,7 @@ export const TEST_GUIDANCE: Record<TestId, TestGuidance> = {
     name: 'Logistic regression',
     whenToUse: 'Use when the outcome is binary (e.g. yes/no) and you want to model the probability as a function of predictors. Reports odds ratios and significance.',
     assumptions: 'Independence; linearity of log-odds in continuous predictors; no perfect separation. Sufficient events per predictor (e.g. ≥10).',
-    alternatives: 'If outcome has 3+ categories: multinomial or ordinal logistic regression. If matched data: conditional logistic regression.',
+    alternatives: 'If outcome has 3+ categories: multinomial or ordinal logistic regression (not yet in app). If count outcome: Poisson or negative binomial regression (not yet in app). If matched data: conditional logistic regression.',
     forLevels: 'Binary outcome, one or more predictors',
   },
   mann: {
@@ -102,6 +110,14 @@ export const TEST_GUIDANCE: Record<TestId, TestGuidance> = {
     assumptions: 'Paired or repeated measures; difference (or residuals) approximately normal for paired t-test; sphericity for repeated-measures ANOVA.',
     alternatives: 'If normality of differences violated: Wilcoxon signed-rank (2 time points). For repeated measures with violations: mixed models or non-parametric alternatives.',
     forLevels: 'Scale outcome, within-subject factor (2+ levels)',
+  },
+  pca: {
+    id: 'pca',
+    name: 'Principal component analysis',
+    whenToUse: 'Use for dimension reduction when you have many correlated scale variables. Extracts components that explain variance; useful for construct validation or reducing predictors.',
+    assumptions: 'Scale variables; linear relationships; sufficient N (e.g. ≥5 per variable). Consider correlation matrix if variables are on different scales.',
+    alternatives: 'Factor analysis if you assume latent factors. For classification with groups: discriminant analysis. For multiple outcomes: MANOVA.',
+    forLevels: 'Scale variables (two or more)',
   },
 }
 

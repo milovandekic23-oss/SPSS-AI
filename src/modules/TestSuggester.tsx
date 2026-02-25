@@ -9,8 +9,9 @@ interface TestSuggesterProps {
 }
 
 const TIER1: TestId[] = ['freq', 'desc', 'missing']
-const TIER2: TestId[] = ['crosstab', 'corr', 'ttest', 'anova']
+const TIER2: TestId[] = ['crosstab', 'corr', 'spearman', 'ttest', 'anova']
 const TIER3: TestId[] = ['linreg', 'logreg', 'mann', 'paired']
+const TIER4: TestId[] = ['pca']
 
 export function TestSuggester({ dataset }: TestSuggesterProps) {
   const [result, setResult] = useState<TestResult | null>(null)
@@ -82,6 +83,15 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
       <h3>🔬 Tier 3 — Regression & non-parametric</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER3.map((id) => (
+          <li key={id} style={{ marginBottom: 12 }}>
+            <TestCard testId={id} dataset={dataset} onRun={() => handleRun(id)} running={runningId === id} />
+          </li>
+        ))}
+      </ul>
+
+      <h3>📐 Tier 4 — Multivariate</h3>
+      <ul style={{ listStyle: 'none', padding: 0 }}>
+        {TIER4.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>
             <TestCard testId={id} dataset={dataset} onRun={() => handleRun(id)} running={runningId === id} />
           </li>

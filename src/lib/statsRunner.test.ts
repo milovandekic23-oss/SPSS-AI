@@ -85,6 +85,56 @@ describe('statsRunner', () => {
       expect(result!.insight).toBeTruthy()
     })
 
+    it('runs "linreg" with scale outcome and predictors and returns R² and coefficients', () => {
+      const dataset = makeDataset()
+      const result = runTest('linreg', dataset)
+      expect(result).not.toBeNull()
+      expect(result!.testId).toBe('linreg')
+      expect(result!.table.some((r) => r.Statistic === 'R²')).toBe(true)
+      expect(result!.insight).toBeTruthy()
+    })
+
+    it('runs "logreg" with binary outcome and returns odds ratios', () => {
+      const dataset = makeDataset()
+      while (dataset.rows.length < 12) {
+        dataset.rows.push({
+          id: dataset.rows.length + 1,
+          age: 20 + dataset.rows.length,
+          gender: dataset.rows.length % 2 === 0 ? 'M' : 'F',
+          score: 70 + dataset.rows.length,
+        })
+      }
+      const result = runTest('logreg', dataset)
+      expect(result).not.toBeNull()
+      expect(result!.testId).toBe('logreg')
+      expect(result!.table.some((r) => 'Odds ratio' in r)).toBe(true)
+    })
+
+    it('runs "mann" with scale outcome and 2 groups and returns Mann-Whitney U', () => {
+      const dataset = makeDataset()
+      const result = runTest('mann', dataset)
+      expect(result).not.toBeNull()
+      expect(result!.testId).toBe('mann')
+      expect(result!.table.some((r) => r.Statistic === 'Mann-Whitney U' || r.Statistic === 'Kruskal-Wallis H')).toBe(true)
+    })
+
+    it('runs "paired" with two scale variables and returns paired t-test', () => {
+      const dataset = makeDataset()
+      const result = runTest('paired', dataset)
+      expect(result).not.toBeNull()
+      expect(result!.testId).toBe('paired')
+      expect(result!.table.some((r) => r.Statistic === 't')).toBe(true)
+    })
+
+    it('runs "pca" with scale variables and returns eigenvalues and variance', () => {
+      const dataset = makeDataset()
+      const result = runTest('pca', dataset)
+      expect(result).not.toBeNull()
+      expect(result!.testId).toBe('pca')
+      expect(result!.table.some((r) => r.Component === 'PC1' || r.Component === 'PC2')).toBe(true)
+      expect(result!.insight).toBeTruthy()
+    })
+
     it('excludes variables with includeInAnalysis false from runTest', () => {
       const dataset = makeDataset()
       dataset.variables[1].includeInAnalysis = false
