@@ -1,52 +1,42 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { DatasetState } from '../types'
 import { getSuggestedVariables, runTest, type TestId, type TestResult } from '../lib/statsRunner'
+import { getTestGuidance } from '../lib/statisticalGuidance'
 import { TestResultPanel } from './TestResultPanel'
 
 interface TestSuggesterProps {
   dataset: DatasetState
 }
 
-const TIER1: { id: TestId; name: string; forLevels: string }[] = [
-  { id: 'freq', name: 'Frequencies & percentages', forLevels: 'Nominal/Ordinal' },
-  { id: 'desc', name: 'Mean, Median, SD, Min, Max', forLevels: 'Scale' },
-  { id: 'missing', name: 'Missing value summary', forLevels: 'All' },
-]
-
-const TIER2: { id: TestId; name: string; forLevels: string }[] = [
-  { id: 'crosstab', name: 'Crosstabulation + Chi-Square', forLevels: 'Nominal × Nominal' },
-  { id: 'corr', name: 'Correlation (Pearson / Spearman)', forLevels: 'Scale × Scale or Ordinal' },
-  { id: 'ttest', name: 'Independent Samples T-Test', forLevels: 'Scale outcome, 2 groups' },
-  { id: 'anova', name: 'One-Way ANOVA', forLevels: 'Scale outcome, 3+ groups' },
-]
-
-const TIER3: { id: TestId; name: string; forLevels: string }[] = [
-  { id: 'linreg', name: 'Linear Regression', forLevels: 'Predict Scale outcome' },
-  { id: 'logreg', name: 'Logistic Regression', forLevels: 'Predict Binary outcome' },
-  { id: 'mann', name: 'Mann-Whitney U / Kruskal-Wallis', forLevels: 'Non-parametric' },
-  { id: 'paired', name: 'Paired T-Test / Repeated Measures ANOVA', forLevels: 'Within-subject' },
-]
+const TIER1: TestId[] = ['freq', 'desc', 'missing']
+const TIER2: TestId[] = ['crosstab', 'corr', 'ttest', 'anova']
+const TIER3: TestId[] = ['linreg', 'logreg', 'mann', 'paired']
 
 export function TestSuggester({ dataset }: TestSuggesterProps) {
   const [result, setResult] = useState<TestResult | null>(null)
   const [runningId, setRunningId] = useState<TestId | null>(null)
+  const resultPanelRef = useRef<HTMLDivElement>(null)
   const n = dataset.rows.length
+
+  useEffect(() => {
+    if (result && resultPanelRef.current && typeof resultPanelRef.current.scrollIntoView === 'function') {
+      resultPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [result])
 
   const handleRun = (testId: TestId) => {
     setRunningId(testId)
     setResult(null)
     try {
       const res = runTest(testId, dataset)
-      if (res) {
-        setResult(res)
-      } else {
-        setResult({
+      setResult(
+        res ?? {
           testId,
-          testName: TIER1.find((t) => t.id === testId)?.name ?? TIER2.find((t) => t.id === testId)?.name ?? TIER3.find((t) => t.id === testId)?.name ?? testId,
+          testName: getTestGuidance(testId).name,
           table: [{ Message: "This test couldn't run with your current data." }],
-          insight: "Not enough suitable variables or data (e.g. need scale variables for descriptive/correlation, or a 2-group categorical for t-test). Check Variable View: set measurement levels and try again.",
-        })
-      }
+          insight: "Check Variable View: set measurement levels and ensure you have the required variable types, then try again.",
+        }
+      )
     } catch (err) {
       setResult({
         testId,
@@ -71,79 +61,57 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
         )}
       </p>
 
-      <h3>📊 Tier 1 — Descriptive Statistics</h3>
+      <h3>📊 Tier 1 — Descriptive statistics (run first)</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
-        {TIER1.map((t) => (
-          <li key={t.id} style={{ marginBottom: 12 }}>
-            <TestCard
-              name={t.name}
-              forLevels={t.forLevels}
-              testId={t.id}
-              dataset={dataset}
-              onRun={() => handleRun(t.id)}
-              running={runningId === t.id}
-            />
+        {TIER1.map((id) => (
+          <li key={id} style={{ marginBottom: 12 }}>
+            <TestCard testId={id} dataset={dataset} onRun={() => handleRun(id)} running={runningId === id} />
           </li>
         ))}
       </ul>
 
-      <h3>📈 Tier 2 — Explore Relationships</h3>
+      <h3>📈 Tier 2 — Bivariate: association & group comparison</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
-        {TIER2.map((t) => (
-          <li key={t.id} style={{ marginBottom: 12 }}>
-            <TestCard
-              name={t.name}
-              forLevels={t.forLevels}
-              testId={t.id}
-              dataset={dataset}
-              onRun={() => handleRun(t.id)}
-              running={runningId === t.id}
-            />
+        {TIER2.map((id) => (
+          <li key={id} style={{ marginBottom: 12 }}>
+            <TestCard testId={id} dataset={dataset} onRun={() => handleRun(id)} running={runningId === id} />
           </li>
         ))}
       </ul>
 
-      <h3>🔬 Tier 3 — Advanced / Inferential</h3>
+      <h3>🔬 Tier 3 — Regression & non-parametric</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
-        {TIER3.map((t) => (
-          <li key={t.id} style={{ marginBottom: 12 }}>
-            <TestCard
-              name={t.name}
-              forLevels={t.forLevels}
-              testId={t.id}
-              dataset={dataset}
-              onRun={() => handleRun(t.id)}
-              running={runningId === t.id}
-            />
+        {TIER3.map((id) => (
+          <li key={id} style={{ marginBottom: 12 }}>
+            <TestCard testId={id} dataset={dataset} onRun={() => handleRun(id)} running={runningId === id} />
           </li>
         ))}
       </ul>
 
       {result && (
-        <TestResultPanel
-          result={result}
-          onClose={() => setResult(null)}
-        />
+        <div ref={resultPanelRef} data-testid="test-result-panel">
+          <TestResultPanel
+            result={result}
+            onClose={() => setResult(null)}
+          />
+        </div>
       )}
     </section>
   )
 }
 
 function TestCard({
-  name,
-  forLevels,
   testId,
   dataset,
   onRun,
   running,
 }: {
-  name: string
-  forLevels: string
   testId: TestId
   dataset: DatasetState
   onRun: () => void
   running: boolean
 }) {
+  const guidance = getTestGuidance(testId)
   const suggested = getSuggestedVariables(testId, dataset)
   const hasVars = suggested.variables.length > 0
 
@@ -156,28 +124,36 @@ function TestCard({
         background: '#fff',
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>✅ {name}</div>
-      <div style={{ fontSize: 14, color: '#555', marginBottom: 6 }}>Applies to: {forLevels}</div>
-      <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 8 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>✅ {guidance.name}</div>
+      <div style={{ fontSize: 13, color: '#555', marginBottom: 6 }}>
+        <strong>When to use:</strong> {guidance.whenToUse}
+      </div>
+      <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
+        <strong>Applies to:</strong> {guidance.forLevels}
+      </div>
+      <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
         <strong>Analyzes:</strong>{' '}
         {hasVars
           ? suggested.variables.map((v) => `${v.label} (${v.role})`).join('; ')
-          : 'No matching variables in your data — add nominal/scale variables to run this test.'}
+          : 'No matching variables in your data — run anyway to see requirements.'}
       </div>
-      <div style={{ fontSize: 13, color: '#7f8c8d', marginBottom: 10 }}>
-        {suggested.description}
-      </div>
+      <details style={{ fontSize: 12, color: '#6c757d', marginBottom: 10 }}>
+        <summary style={{ cursor: 'pointer' }}>Assumptions & alternatives</summary>
+        <p style={{ margin: '6px 0 4px' }}><strong>Assumptions:</strong> {guidance.assumptions}</p>
+        <p style={{ margin: '4px 0 0' }}><strong>Alternatives:</strong> {guidance.alternatives}</p>
+      </details>
       <button
         type="button"
         onClick={onRun}
-        disabled={running || !hasVars}
+        disabled={running}
+        title="Run this analysis (always runs when you click; shows result or requirement message)"
         style={{
           padding: '0.35rem 0.75rem',
-          background: running || !hasVars ? '#95a5a6' : '#3498db',
+          background: running ? '#95a5a6' : '#3498db',
           color: '#fff',
           border: 'none',
           borderRadius: 4,
-          cursor: running || !hasVars ? 'default' : 'pointer',
+          cursor: running ? 'default' : 'pointer',
         }}
       >
         {running ? 'Running…' : 'Run this test'}

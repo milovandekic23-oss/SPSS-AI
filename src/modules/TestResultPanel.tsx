@@ -21,7 +21,9 @@ interface TestResultPanelProps {
 
 export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
   const { testName, table, chart, insight, keyStat } = result
-  const tableHeaders = table.length > 0 ? Object.keys(table[0]) : []
+  const safeTable = Array.isArray(table) ? table : []
+  const tableHeaders = safeTable.length > 0 ? Object.keys(safeTable[0]) : []
+  const safeChart = chart && Array.isArray(chart.data) && chart.data.length > 0 ? chart : null
 
   return (
     <div
@@ -62,7 +64,7 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
 
       <p style={{ margin: '0 0 16px', lineHeight: 1.5, color: '#34495e' }}>💡 {insight}</p>
 
-      {table.length > 0 && (
+      {safeTable.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 20 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 14 }}>
             <thead>
@@ -75,7 +77,7 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
               </tr>
             </thead>
             <tbody>
-              {table.map((row, i) => (
+              {safeTable.map((row, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                   {tableHeaders.map((h) => (
                     <td key={h} style={{ padding: '6px 10px', border: '1px solid #ddd' }}>
@@ -89,27 +91,27 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
         </div>
       )}
 
-      {chart && chart.data.length > 0 && (
+      {safeChart && (
         <div style={{ marginTop: 16 }}>
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#555' }}>{chart.title}</h4>
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#555' }}>{safeChart.title}</h4>
           <div style={{ width: '100%', height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
-              {chart.type === 'bar' ? (
-                <BarChart data={chart.data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+              {safeChart.type === 'bar' ? (
+                <BarChart data={safeChart.data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                  <XAxis dataKey={chart.xKey} tick={{ fontSize: 12 }} />
+                  <XAxis dataKey={safeChart.xKey} tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey={chart.yKey ?? 'value'} fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey={safeChart.yKey ?? 'value'} fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
                 </BarChart>
-              ) : chart.type === 'scatter' ? (
+              ) : safeChart.type === 'scatter' ? (
                 <ScatterChart margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                  <XAxis dataKey={chart.xKey} name="X" tick={{ fontSize: 12 }} />
-                  <YAxis dataKey={chart.yKey ?? 'y'} name="Y" tick={{ fontSize: 12 }} />
+                  <XAxis dataKey={safeChart.xKey} name="X" tick={{ fontSize: 12 }} />
+                  <YAxis dataKey={safeChart.yKey ?? 'y'} name="Y" tick={{ fontSize: 12 }} />
                   <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                  <Scatter data={chart.data} fill={CHART_COLORS[0]}>
-                    {chart.data.map((_, i) => (
+                  <Scatter data={safeChart.data} fill={CHART_COLORS[0]}>
+                    {safeChart.data.map((_, i) => (
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Scatter>

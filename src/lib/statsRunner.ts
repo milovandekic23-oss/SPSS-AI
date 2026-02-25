@@ -9,6 +9,21 @@ import {
 } from 'simple-statistics'
 import type { DatasetState, DataRow } from '../types'
 
+/** Helper: return a result when the test cannot be run (so we never return null). */
+function notApplicableResult(
+  testId: TestId,
+  testName: string,
+  message: string,
+  suggestion?: string
+): TestResult {
+  return {
+    testId,
+    testName,
+    table: [{ Requirement: message, Suggestion: suggestion ?? '—' }],
+    insight: message + (suggestion ? ` ${suggestion}` : ''),
+  }
+}
+
 export type TestId =
   | 'freq'
   | 'desc'
@@ -190,7 +205,8 @@ export function runTest(
   switch (testId) {
     case 'freq': {
       const varName = selectedVarNames?.[0] ?? variables.find((v) => v.measurementLevel !== 'scale')?.name ?? variables[0]?.name
-      if (!varName) return null
+      if (!varName)
+        return notApplicableResult('freq', 'Frequencies & percentages', 'No variable available. Add at least one variable in Variable View.')
       const counts: Record<string, number> = {}
       for (const row of rows) {
         const v = row[varName]
@@ -276,7 +292,13 @@ export function runTest(
         nominalVars[0]?.name,
         nominalVars[1]?.name ?? nominalVars[0]?.name,
       ]
-      if (!rowVar || !colVar) return null
+      if (!rowVar || !colVar)
+        return notApplicableResult(
+          'crosstab',
+          'Crosstabulation + Chi-Square',
+          'Crosstab requires two categorical (nominal or ordinal) variables.',
+          'In Variable View, set at least two variables to Nominal or Ordinal, then run again.'
+        )
       const rowVals = getDistinctValues(rows, rowVar).sort((a, b) => String(a).localeCompare(String(b)))
       const colVals = getDistinctValues(rows, colVar).sort((a, b) => String(a).localeCompare(String(b)))
       const grid: number[][] = rowVals.map(() => colVals.map(() => 0))
@@ -334,7 +356,13 @@ export function runTest(
 
     case 'corr': {
       const [v1, v2] = selectedVarNames ?? scaleVars.slice(0, 2).map((v: { name: string }) => v.name)
-      if (!v1 || !v2) return null
+      if (!v1 || !v2)
+        return notApplicableResult(
+          'corr',
+          'Pearson correlation',
+          'Correlation requires two continuous (scale) variables.',
+          'In Variable View, set two variables to Scale, then run again.'
+        )
       const xTrim: number[] = []
       const yTrim: number[] = []
       for (let i = 0; i < rows.length; i++) {
@@ -345,7 +373,13 @@ export function runTest(
           yTrim.push(b)
         }
       }
-      if (xTrim.length < 3) return null
+      if (xTrim.length < 3)
+        return notApplicableResult(
+          'corr',
+          'Pearson correlation',
+          `Need at least 3 paired observations; you have ${xTrim.length}.`,
+          'Remove or impute missing values for both variables so more rows have valid pairs.'
+        )
       const r = sampleCorrelation(xTrim, yTrim)
       const t = r * Math.sqrt((xTrim.length - 2) / (1 - r * r))
       const p = tToPValue(t, xTrim.length - 2)
@@ -377,15 +411,34 @@ export function runTest(
     case 'ttest': {
       const outcomeName = selectedVarNames?.[0] ?? scaleVars[0]?.name
       const groupName = selectedVarNames?.[1] ?? nominalVars.find((v: { name: string }) => getDistinctValues(rows, v.name).length === 2)?.name
-      if (!outcomeName || !groupName) return null
+      if (!outcomeName || !groupName)
+        return notApplicableResult(
+          'ttest',
+          'Independent-samples t-test',
+          'Need one continuous (scale) outcome and one categorical variable with exactly two groups.',
+          'In Variable View: set the outcome to Scale and the grouping variable to Nominal with two categories.'
+        )
       const groups = getDistinctValues(rows, groupName)
-      if (groups.length !== 2) return null
+      if (groups.length !== 2)
+        return notApplicableResult(
+          'ttest',
+          'Independent-samples t-test',
+          `Grouping variable has ${groups.length} categories; t-test requires exactly 2.`,
+          'Use One-way ANOVA for 3+ groups, or create a binary variable (e.g. merge categories).'
+        )
       const [g1, g2] = groups
       const sample1 = rows.filter((r) => r[groupName] === g1).map((r) => r[outcomeName]).filter((v): v is number => typeof v === 'number' && !Number.isNaN(v))
       const sample2 = rows.filter((r) => r[groupName] === g2).map((r) => r[outcomeName]).filter((v): v is number => typeof v === 'number' && !Number.isNaN(v))
-      if (sample1.length < 2 || sample2.length < 2) return null
+      if (sample1.length < 2 || sample2.length < 2)
+        return notApplicableResult(
+          'ttest',
+          'Independent-samples t-test',
+          'Need at least 2 observations per group.',
+          `Current: ${sample1.length} and ${sample2.length}. Add data or check for missing values.`
+        )
       const t = tTestTwoSample(sample1, sample2)
-      if (t === null) return null
+      if (t === null)
+        return notApplicableResult('ttest', 'Independent-samples t-test', 'Could not compute t-statistic (e.g. zero variance in a group).', 'Check data and variance in each group.')
       const df = sample1.length + sample2.length - 2
       const p = tToPValue(t, df)
       const m1 = mean(sample1)
