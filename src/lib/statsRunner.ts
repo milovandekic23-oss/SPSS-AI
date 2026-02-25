@@ -97,6 +97,15 @@ function tToPValue(t: number, df: number): number {
   return Math.min(1, 2 * oneTail)
 }
 
+/** Approximate p-value for F-statistic (Wilson–Hilferty: F^(1/3) approx normal; uses df2) */
+function fToPValue(F: number, _df1: number, df2: number): number {
+  if (F <= 0 || df2 < 2) return 1
+  const mu = 1 - 2 / (9 * df2)
+  const sigma = Math.sqrt(2 / (9 * df2))
+  const z = (Math.pow(F, 1 / 3) - mu) / sigma
+  return 1 - cumulativeStdNormalProbability(z)
+}
+
 /** Variables included in analysis (excluded ones are ignored in suggestions and tests). */
 function includedVariables(dataset: DatasetState) {
   return dataset.variables.filter((v) => v.includeInAnalysis !== false)
@@ -471,12 +480,88 @@ export function runTest(
       }
     }
 
+    case 'anova': {
+      const outcomeName = selectedVarNames?.[0] ?? scaleVars[0]?.name
+      const groupName = selectedVarNames?.[1] ?? nominalVars.find((v: { name: string }) => getDistinctValues(rows, v.name).length >= 3)?.name ?? nominalVars[0]?.name
+      if (!outcomeName || !groupName)
+        return notApplicableResult(
+          'anova',
+          'One-way ANOVA',
+          'Need one continuous (scale) outcome and one categorical variable with 3+ groups.',
+          'In Variable View: set the outcome to Scale and the grouping variable to Nominal with at least 3 categories.'
+        )
+      const groupVals = getDistinctValues(rows, groupName).sort((a, b) => String(a).localeCompare(String(b)))
+      if (groupVals.length < 3)
+        return notApplicableResult(
+          'anova',
+          'One-way ANOVA',
+          `Grouping variable has ${groupVals.length} categories; ANOVA requires 3 or more.`,
+          'Use Independent-samples t-test for 2 groups.'
+        )
+      const samples = groupVals.map((g) =>
+        rows
+          .filter((r) => r[groupName] === g)
+          .map((r) => r[outcomeName])
+          .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v))
+      )
+      const nPerGroup = samples.map((s) => s.length)
+      if (nPerGroup.some((n) => n < 2))
+        return notApplicableResult(
+          'anova',
+          'One-way ANOVA',
+          'Need at least 2 observations per group.',
+          `Current group sizes: ${nPerGroup.join(', ')}.`
+        )
+      const allVals = samples.flat()
+      const n = allVals.length
+      const grandMean = mean(allVals)
+      const groupMeans = samples.map((s) => mean(s))
+      const SSB = samples.reduce((acc, s, j) => acc + s.length * (groupMeans[j] - grandMean) ** 2, 0)
+      const SSW = samples.reduce((acc, s, j) => acc + s.reduce((a, x) => a + (x - groupMeans[j]) ** 2, 0), 0)
+      const k = groupVals.length
+      const df1 = k - 1
+      const df2 = n - k
+      if (df2 < 1) return notApplicableResult('anova', 'One-way ANOVA', 'Not enough observations for ANOVA.', 'Need more rows than groups.')
+      const MSB = SSB / df1
+      const MSW = SSW / df2
+      const F = MSW > 0 ? MSB / MSW : 0
+      const p = fToPValue(F, df1, df2)
+      const table: ResultRow[] = [
+        ...groupVals.map((g, j) => ({
+          Group: String(g),
+          N: nPerGroup[j],
+          Mean: Math.round(groupMeans[j] * 1000) / 1000,
+          SD: Math.round((samples[j].length < 2 ? 0 : standardDeviation(samples[j])) * 1000) / 1000,
+        })),
+        { Statistic: 'F', Value: Math.round(F * 1000) / 1000 },
+        { Statistic: 'df1 (groups)', Value: df1 },
+        { Statistic: 'df2 (error)', Value: df2 },
+        { Statistic: 'p-value (approx)', Value: p < 0.001 ? '< 0.001' : Math.round(p * 1000) / 1000 },
+      ]
+      const chart: ChartSpec = {
+        type: 'bar',
+        title: `Mean ${getVar(outcomeName)?.label ?? outcomeName} by ${getVar(groupName)?.label ?? groupName}`,
+        data: groupVals.map((g, j) => ({ name: String(g), mean: groupMeans[j] })),
+        xKey: 'name',
+        yKey: 'mean',
+      }
+      const insight = `One-way ANOVA: F(${df1}, ${df2}) = ${F.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'At least one group mean differs significantly. Consider post-hoc comparisons.' : 'No significant difference between group means.'}`
+      return {
+        testId,
+        testName: 'One-way ANOVA',
+        table,
+        chart,
+        insight,
+        keyStat: `F = ${F.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+      }
+    }
+
     default:
       return {
         testId,
-        testName: testId,
-        table: [{ Note: 'This test is not yet implemented.' }],
-        insight: 'Implementation coming soon. Try Frequencies, Descriptive statistics, Missing summary, Crosstab, Correlation, or T-Test.',
+        testName: String(testId),
+        table: [{ Note: 'This test is not yet implemented.', Implemented: 'freq, desc, missing, crosstab, corr, ttest, anova' }],
+        insight: 'Not yet implemented. Currently implemented: Frequencies, Descriptive statistics, Missing summary, Crosstab, Chi-Square, Pearson correlation, Independent-samples t-test, One-way ANOVA.',
       }
   }
 }

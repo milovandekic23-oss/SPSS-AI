@@ -58,6 +58,33 @@ describe('statsRunner', () => {
       expect(result!.insight).toBeTruthy()
     })
 
+    it('runs "anova" with scale outcome and 3+ groups and returns F and p', () => {
+      const dataset = makeDataset()
+      dataset.variables.push({
+        name: 'condition',
+        label: 'Condition',
+        measurementLevel: 'nominal',
+        variableType: 'string',
+        role: 'none',
+        valueLabels: [],
+        missingCodes: [],
+        missingPct: 0,
+      })
+      dataset.rows = [
+        { id: 1, age: 25, gender: 'M', score: 80, condition: 'A' },
+        { id: 2, age: 30, gender: 'F', score: 85, condition: 'A' },
+        { id: 3, age: 28, gender: 'M', score: 78, condition: 'B' },
+        { id: 4, age: 35, gender: 'F', score: 90, condition: 'B' },
+        { id: 5, age: 22, gender: 'M', score: 72, condition: 'C' },
+        { id: 6, age: 26, gender: 'F', score: 88, condition: 'C' },
+      ]
+      const result = runTest('anova', dataset)
+      expect(result).not.toBeNull()
+      expect(result!.testId).toBe('anova')
+      expect(result!.table.some((r) => r.Statistic === 'F')).toBe(true)
+      expect(result!.insight).toBeTruthy()
+    })
+
     it('excludes variables with includeInAnalysis false from runTest', () => {
       const dataset = makeDataset()
       dataset.variables[1].includeInAnalysis = false
