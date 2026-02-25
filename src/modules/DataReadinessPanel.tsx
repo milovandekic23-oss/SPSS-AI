@@ -5,6 +5,10 @@ import { theme } from '../theme'
 
 interface DataReadinessPanelProps {
   dataset: DatasetState | null
+  /** If provided, the panel can offer "Exclude from analysis" and other fixes. */
+  onDatasetChange?: (dataset: DatasetState) => void
+  /** If provided, show "Go to Variable View" to fix issues there. */
+  onOpenVariableView?: () => void
 }
 
 const SEVERITY_STYLE: Record<ReadinessItem['severity'], { bg: string; border: string; label: string }> = {
@@ -20,11 +24,22 @@ const LEVEL_STYLE: Record<DataReadinessResult['level'], { bg: string; color: str
   not_ready: { bg: '#fadbd8', color: '#c0392b', label: 'Not Ready' },
 }
 
-export function DataReadinessPanel({ dataset }: DataReadinessPanelProps) {
+export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableView }: DataReadinessPanelProps) {
   const [heatmapOpen, setHeatmapOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(true)
 
   const result = useMemo(() => (dataset?.variableViewConfirmed && dataset ? checkDataReadiness(dataset) : null), [dataset])
+
+  const handleExcludeFromAnalysis = (varName: string) => {
+    if (!dataset || !onDatasetChange) return
+    const next = {
+      ...dataset,
+      variables: dataset.variables.map((v) =>
+        v.name === varName ? { ...v, includeInAnalysis: false } : v
+      ),
+    }
+    onDatasetChange(next)
+  }
 
   if (!result || !dataset) return null
 
@@ -102,6 +117,23 @@ export function DataReadinessPanel({ dataset }: DataReadinessPanelProps) {
                       Suggestion: {item.suggestion}
                     </div>
                   )}
+                  {item.variable && item.category === 'missing' && onDatasetChange && (
+                    <button
+                      type="button"
+                      onClick={() => handleExcludeFromAnalysis(item.variable!)}
+                      style={{
+                        marginTop: 6,
+                        padding: '4px 10px',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        background: theme.colors.surface,
+                        border: `1px solid ${theme.colors.border}`,
+                        borderRadius: 4,
+                      }}
+                    >
+                      Exclude from analysis
+                    </button>
+                  )}
                 </li>
               )
             })}
@@ -109,11 +141,30 @@ export function DataReadinessPanel({ dataset }: DataReadinessPanelProps) {
 
           {result.items.length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <strong style={{ fontSize: 12, color: theme.colors.textMuted }}>Fix suggestions</strong>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: theme.colors.textMuted }}>
-                Address missing data (exclude variables or impute), outliers (keep/remove/winsorize in a future version),
-                and duplicate rows in your source data. For non-normal variables, use non-parametric tests in Test Suggester.
-              </p>
+              <strong style={{ fontSize: 12, color: theme.colors.textMuted }}>How to fix</strong>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: theme.colors.textMuted, lineHeight: 1.5 }}>
+                <li><strong>High missing %:</strong> Use “Exclude from analysis” above, or in Variable View uncheck “In analysis” for that variable. If the variable is an <strong>option in a multi-select question</strong> (e.g. “Select max 2”), go to Variable View → Question groups → create a group with type <strong>Checkbox</strong> and assign the option columns to it — then readiness will not flag them.</li>
+                <li><strong>Outliers / non-normal:</strong> Use non-parametric tests (e.g. Mann-Whitney, Kruskal-Wallis) in Test Suggester.</li>
+                <li><strong>Duplicates:</strong> Clean or deduplicate in your source data.</li>
+              </ul>
+              {onOpenVariableView && (
+                <button
+                  type="button"
+                  onClick={onOpenVariableView}
+                  style={{
+                    marginTop: 10,
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    background: theme.colors.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                  }}
+                >
+                  Go to Variable View to fix
+                </button>
+              )}
             </div>
           )}
 

@@ -96,6 +96,17 @@ function maxCategoryShare(rows: DataRow[], varName: string, missingCodes: (strin
   return Math.round((Math.max(...Object.values(counts)) / total) * 1000) / 10
 }
 
+/** Variable names that are options in a multi-response (checkbox/matrix) question. High "missing" per option is expected. */
+function multiResponseOptionVarNames(dataset: DatasetState): Set<string> {
+  const set = new Set<string>()
+  for (const g of dataset.questionGroups ?? []) {
+    if (g.type === 'checkbox' || g.type === 'matrix') {
+      for (const name of g.variableNames ?? []) set.add(name)
+    }
+  }
+  return set
+}
+
 /** Run data readiness checks. Handles edge cases (empty, n=1, zero variance) without throwing. */
 export function checkDataReadiness(dataset: DatasetState): DataReadinessResult {
   const items: ReadinessItem[] = []
@@ -104,14 +115,20 @@ export function checkDataReadiness(dataset: DatasetState): DataReadinessResult {
   const includedVars = variables.filter((v) => v.includeInAnalysis !== false)
   const scaleVars = includedVars.filter((v) => v.measurementLevel === 'scale')
   const nominalOrOrdinal = includedVars.filter((v) => v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal')
+  const multiResponseVars = multiResponseOptionVarNames(dataset)
 
   const missingPctByVar: Record<string, number> = {}
   let overallSeverity: ReadinessSeverity = 'info'
 
   // ----- MISSING DATA -----
+  let anySkippedMultiResponse = false
   for (const v of includedVars) {
     const pct = effectiveMissingPct(rows, v.name, v.missingCodes ?? [])
     missingPctByVar[v.name] = pct
+    if (multiResponseVars.has(v.name)) {
+      anySkippedMultiResponse = true
+      continue
+    }
     if (pct > 50) {
       items.push({
         id: `missing-${v.name}`,
@@ -146,6 +163,15 @@ export function checkDataReadiness(dataset: DatasetState): DataReadinessResult {
       })
       overallSeverity = worstSeverity(overallSeverity, 'caution')
     }
+  }
+  if (anySkippedMultiResponse) {
+    items.push({
+      id: 'multi-response-info',
+      severity: 'info',
+      category: 'missing',
+      message: 'Multi-select option columns (checkbox/matrix groups) are not flagged for missing % — high non-response per option is expected.',
+      suggestion: 'Assign option columns to a Question group with type Checkbox (or Matrix) in Variable View if you haven’t already.',
+    })
   }
 
   // ----- OUTLIERS (scale variables) -----

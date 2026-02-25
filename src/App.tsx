@@ -102,7 +102,13 @@ function App() {
         </div>
       </nav>
 
-      {dataset?.variableViewConfirmed && <DataReadinessPanel dataset={dataset} />}
+      {dataset?.variableViewConfirmed && (
+        <DataReadinessPanel
+          dataset={dataset}
+          onDatasetChange={setDataset}
+          onOpenVariableView={() => setActiveModule('variable')}
+        />
+      )}
 
       <main style={styles.main}>
         <MainErrorBoundary>
