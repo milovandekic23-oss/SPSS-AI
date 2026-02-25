@@ -122,29 +122,45 @@ export interface TestResult {
   /** e.g. p-value, r, t, etc. */
   keyStat?: string
   /** Variables/questions analyzed (for clear display in result panel) */
-  variablesAnalyzed?: { label: string; role?: string }[]
+  variablesAnalyzed?: { name?: string; label: string; role?: string }[]
+  /** Map varName -> (code -> label) for showing value labels in tables */
+  valueLabelMaps?: Record<string, Record<string, string>>
   /** Plain-language takeaway: "In practice: ..." */
   plainLanguage?: string
   /** Short actionable recommendation: "Next step: ..." */
   nextStep?: string
 }
 
-function getNumericValues(rows: DataRow[], varName: string): number[] {
+/** User-defined missing codes: values to exclude from analysis (e.g. 99, 999, "Refused"). */
+function isUserMissing(value: string | number | null, missingCodes: (string | number)[]): boolean {
+  if (value === null || value === undefined || value === '') return true
+  if (missingCodes.length === 0) return false
+  const s = String(value)
+  return missingCodes.some((c) => String(c) === s)
+}
+
+/** Build code -> label map for result display (value labels in tables). */
+function valueLabelMapFromVar(v: { valueLabels?: { code: number | string; label: string }[] } | undefined): Record<string, string> {
+  if (!v?.valueLabels?.length) return {}
+  return Object.fromEntries(v.valueLabels.map(({ code, label }) => [String(code), label]))
+}
+
+function getNumericValues(rows: DataRow[], varName: string, missingCodes: (string | number)[] = []): number[] {
   const out: number[] = []
   for (const row of rows) {
     const v = row[varName]
-    if (v === null || v === undefined || v === '') continue
+    if (isUserMissing(v, missingCodes)) continue
     const n = Number(v)
     if (!Number.isNaN(n)) out.push(n)
   }
   return out
 }
 
-function getDistinctValues(rows: DataRow[], varName: string): (string | number)[] {
+function getDistinctValues(rows: DataRow[], varName: string, missingCodes: (string | number)[] = []): (string | number)[] {
   const set = new Set<string | number>()
   for (const row of rows) {
     const v = row[varName]
-    if (v === null || v === undefined || v === '') continue
+    if (isUserMissing(v, missingCodes)) continue
     set.add(v)
   }
   return Array.from(set)
@@ -222,11 +238,26 @@ function includedVariables(dataset: DatasetState) {
 
 export function getSuggestedVariables(testId: TestId, dataset: DatasetState): SuggestedVars {
   const variables = includedVariables(dataset)
-  const { rows } = dataset
+  const { rows, questionGroups } = dataset
   const scaleVars = variables.filter((v) => v.measurementLevel === 'scale')
   const nominalVars = variables.filter((v) => v.measurementLevel === 'nominal')
   const ordinalVars = variables.filter((v) => v.measurementLevel === 'ordinal')
   const categoricalVars = [...nominalVars, ...ordinalVars]
+  /** Prefer scale variables from the same question group for paired / repeated measures. */
+  const pairedFromGroup =
+    questionGroups?.length && scaleVars.length >= 2
+      ? questionGroups
+          .map((g) => g.variableNames.map((name) => scaleVars.find((v) => v.name === name)).filter(Boolean) as typeof scaleVars)
+          .find((arr) => arr.length >= 2)
+      : undefined
+  const preferredPairedVars = (pairedFromGroup?.length ? pairedFromGroup : scaleVars).slice(0, 4)
+  const crosstabFromGroup =
+    questionGroups?.length && nominalVars.length >= 2
+      ? questionGroups
+          .map((g) => g.variableNames.map((name) => nominalVars.find((v) => v.name === name)).filter(Boolean) as typeof nominalVars)
+          .find((arr) => arr.length >= 2)
+      : undefined
+  const preferredCrosstabVars = crosstabFromGroup?.length ? crosstabFromGroup.slice(0, 2) : nominalVars.slice(0, 2)
 
   switch (testId) {
     case 'freq':
@@ -250,7 +281,7 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
         variables: variables.slice(0, 10).map((v) => ({ name: v.name, label: v.label, role: 'variable' })),
       }
     case 'crosstab': {
-      const two = nominalVars.slice(0, 2)
+      const two = preferredCrosstabVars
       return {
         testId: 'crosstab',
         description: 'Cross-tabulation and Chi-Square test of independence.',
@@ -291,7 +322,7 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
     case 'ttest': {
       const scale = scaleVars[0]
       const groupVar = nominalVars.find((v) => {
-        const vals = getDistinctValues(rows, v.name)
+        const vals = getDistinctValues(rows, v.name, v.missingCodes ?? [])
         return vals.length === 2
       }) ?? nominalVars[0]
       return {
@@ -326,7 +357,7 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
         testId: 'logreg',
         description: 'Logistic regression: binary outcome predicted from one or more predictors.',
         variables: [
-          ...(nominalVars.find((v) => getDistinctValues(rows, v.name).length === 2) ? [{ name: nominalVars.find((v) => getDistinctValues(rows, v.name).length === 2)!.name, label: nominalVars.find((v) => getDistinctValues(rows, v.name).length === 2)!.label, role: 'outcome' }] : []),
+          ...(nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2) ? [{ name: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.name, label: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.label, role: 'outcome' }] : []),
           ...variables.filter((v) => v.measurementLevel === 'scale' || v.measurementLevel === 'nominal').slice(0, 5).map((v) => ({ name: v.name, label: v.label, role: 'predictor' })),
         ],
       }
@@ -343,7 +374,7 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
       return {
         testId: 'paired',
         description: 'Paired t-test (2 repeated measures) or repeated-measures ANOVA (3+ levels).',
-        variables: variables.filter((v) => v.measurementLevel === 'scale').slice(0, 4).map((v) => ({ name: v.name, label: v.label, role: 'repeated measure' })),
+        variables: preferredPairedVars.map((v) => ({ name: v.name, label: v.label, role: 'repeated measure' })),
       }
     case 'pca':
       return {
@@ -378,10 +409,11 @@ export function runTest(
       const varName = selectedVarNames?.[0] ?? variables.find((v) => v.measurementLevel !== 'scale')?.name ?? variables[0]?.name
       if (!varName)
         return notApplicableResult('freq', 'Frequencies & percentages', 'No variable available. Add at least one variable in Variable View.')
+      const missingCodes = getVar(varName)?.missingCodes ?? []
       const counts: Record<string, number> = {}
       for (const row of rows) {
         const v = row[varName]
-        const key = v === null || v === undefined || v === '' ? '(missing)' : String(v)
+        const key = isUserMissing(v, missingCodes) ? '(missing)' : String(v)
         counts[key] = (counts[key] ?? 0) + 1
       }
       const total = Object.values(counts).reduce((a, b) => a + b, 0)
@@ -413,6 +445,8 @@ export function runTest(
           ? `In practice: most responses are "${String(topCategory.Value)}" (${topCategory.Percent}%); ${table.length > 1 ? 'see the table for all categories.' : 'single category.'}`
           : undefined
       const nextStep = 'Next step: use these counts to check distributions before chi-square or other tests; watch for categories with very low counts.'
+      const vlMap = valueLabelMapFromVar(getVar(varName))
+      const valueLabelMaps = Object.keys(vlMap).length > 0 ? { [varName]: vlMap } : undefined
       return {
         testId,
         testName: 'Frequencies & percentages',
@@ -421,7 +455,8 @@ export function runTest(
         insight,
         plainLanguage,
         nextStep,
-        variablesAnalyzed: [{ label: varLabel, role: 'variable' }],
+        variablesAnalyzed: [{ name: varName, label: varLabel, role: 'variable' }],
+        valueLabelMaps,
       }
     }
 
@@ -432,7 +467,7 @@ export function runTest(
         : scaleVars.slice(0, 6).map((v) => v.name)
       const table: ResultRow[] = []
       for (const name of toUse) {
-        const vals = getNumericValues(rows, name)
+        const vals = getNumericValues(rows, name, getVar(name)?.missingCodes ?? [])
         if (vals.length === 0) {
           table.push({ Variable: getVar(name)?.label ?? name, N: 0, Mean: '—', SD: '—', Min: '—', Max: '—' })
           continue
@@ -482,7 +517,8 @@ export function runTest(
 
     case 'missing': {
       const table: ResultRow[] = variables.map((v) => {
-        const missing = rows.filter((r) => r[v.name] === null || r[v.name] === undefined || r[v.name] === '').length
+        const codes = v.missingCodes ?? []
+        const missing = rows.filter((r) => isUserMissing(r[v.name], codes)).length
         const pct = n ? Math.round((missing / n) * 1000) / 10 : 0
         return { Variable: v.label, Missing: missing, Total: n, 'Missing %': pct }
       })
@@ -516,8 +552,8 @@ export function runTest(
           'Crosstab requires two categorical (nominal or ordinal) variables.',
           'In Variable View, set at least two variables to Nominal or Ordinal, then run again.'
         )
-      const rowVals = getDistinctValues(rows, rowVar).sort((a, b) => String(a).localeCompare(String(b)))
-      const colVals = getDistinctValues(rows, colVar).sort((a, b) => String(a).localeCompare(String(b)))
+      const rowVals = getDistinctValues(rows, rowVar, getVar(rowVar)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
+      const colVals = getDistinctValues(rows, colVar, getVar(colVar)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
       const grid: number[][] = rowVals.map(() => colVals.map(() => 0))
       let total = 0
       for (const row of rows) {
@@ -604,6 +640,12 @@ export function runTest(
       const nextStep = sig
         ? 'Next step: report this association and the cell counts; if any expected count was < 5, consider Fisher’s exact or collapsing categories.'
         : 'Next step: you can report "no evidence of association"; consider confidence intervals or a larger sample if you need more precision.'
+      const rowMap = valueLabelMapFromVar(getVar(rowVar))
+      const colMap = valueLabelMapFromVar(getVar(colVar))
+      const valueLabelMaps =
+        Object.keys(rowMap).length > 0 || Object.keys(colMap).length > 0
+          ? { [rowVar]: rowMap, [colVar]: colMap }
+          : undefined
       return {
         testId,
         testName: 'Crosstabulation + Chi-Square',
@@ -614,9 +656,10 @@ export function runTest(
         plainLanguage,
         nextStep,
         variablesAnalyzed: [
-          { label: rowLabel, role: 'row variable' },
-          { label: colLabel, role: 'column variable' },
+          { name: rowVar, label: rowLabel, role: 'row variable' },
+          { name: colVar, label: colLabel, role: 'column variable' },
         ],
+        valueLabelMaps,
       }
     }
 
@@ -761,7 +804,7 @@ export function runTest(
 
     case 'ttest': {
       const outcomeName = selectedVarNames?.[0] ?? scaleVars[0]?.name
-      const groupName = selectedVarNames?.[1] ?? nominalVars.find((v: { name: string }) => getDistinctValues(rows, v.name).length === 2)?.name
+      const groupName = selectedVarNames?.[1] ?? nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)?.name
       if (!outcomeName || !groupName)
         return notApplicableResult(
           'ttest',
@@ -769,7 +812,7 @@ export function runTest(
           'Need one continuous (scale) outcome and one categorical variable with exactly two groups.',
           'In Variable View: set the outcome to Scale and the grouping variable to Nominal with two categories.'
         )
-      const groups = getDistinctValues(rows, groupName)
+      const groups = getDistinctValues(rows, groupName, getVar(groupName)?.missingCodes ?? [])
       if (groups.length !== 2)
         return notApplicableResult(
           'ttest',
@@ -850,7 +893,7 @@ export function runTest(
 
     case 'anova': {
       const outcomeName = selectedVarNames?.[0] ?? scaleVars[0]?.name
-      const groupName = selectedVarNames?.[1] ?? nominalVars.find((v: { name: string }) => getDistinctValues(rows, v.name).length >= 3)?.name ?? nominalVars[0]?.name
+      const groupName = selectedVarNames?.[1] ?? nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length >= 3)?.name ?? nominalVars[0]?.name
       if (!outcomeName || !groupName)
         return notApplicableResult(
           'anova',
@@ -858,7 +901,7 @@ export function runTest(
           'Need one continuous (scale) outcome and one categorical variable with 3+ groups.',
           'In Variable View: set the outcome to Scale and the grouping variable to Nominal with at least 3 categories.'
         )
-      const groupVals = getDistinctValues(rows, groupName).sort((a, b) => String(a).localeCompare(String(b)))
+      const groupVals = getDistinctValues(rows, groupName, getVar(groupName)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
       if (groupVals.length < 3)
         return notApplicableResult(
           'anova',
@@ -987,7 +1030,7 @@ export function runTest(
       const colNames: string[] = ['(Intercept)']
       for (const name of scalePredictors) colNames.push(name)
       for (const name of nominalPredictors) {
-        const vals = getDistinctValues(completeRows, name).sort((a, b) => String(a).localeCompare(String(b)))
+        const vals = getDistinctValues(completeRows, name, getVar(name)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
         const ref = vals[0]
         for (let i = 1; i < vals.length; i++) colNames.push(`${name}_${vals[i]} vs ${ref}`)
       }
@@ -997,7 +1040,7 @@ export function runTest(
         const xRow: number[] = [1]
         for (const name of scalePredictors) xRow.push(Number(row[name]))
         for (const name of nominalPredictors) {
-          const vals = getDistinctValues(completeRows, name).sort((a, b) => String(a).localeCompare(String(b)))
+          const vals = getDistinctValues(completeRows, name, getVar(name)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
           for (let i = 1; i < vals.length; i++) xRow.push(row[name] === vals[i] ? 1 : 0)
         }
         X.push(xRow)
@@ -1075,8 +1118,8 @@ export function runTest(
     }
 
     case 'logreg': {
-      const outcomeName = selectedVarNames?.[0] ?? nominalVars.find((v) => getDistinctValues(rows, v.name).length === 2)?.name
-      const predictorNames = selectedVarNames?.slice(1) ?? [...scaleVars.slice(0, 2).map((v) => v.name), ...nominalVars.filter((v) => getDistinctValues(rows, v.name).length === 2).slice(0, 1).map((v) => v.name)].filter(Boolean)
+      const outcomeName = selectedVarNames?.[0] ?? nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)?.name
+      const predictorNames = selectedVarNames?.slice(1) ?? [...scaleVars.slice(0, 2).map((v) => v.name), ...nominalVars.filter((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2).slice(0, 1).map((v) => v.name)].filter(Boolean)
       if (!outcomeName || !predictorNames?.length)
         return notApplicableResult(
           'logreg',
@@ -1084,7 +1127,7 @@ export function runTest(
           'Need one binary outcome and at least one predictor.',
           'In Variable View, set outcome to Nominal with two categories and add scale or nominal predictors.'
         )
-      const outcomeVals = getDistinctValues(rows, outcomeName)
+      const outcomeVals = getDistinctValues(rows, outcomeName, getVar(outcomeName)?.missingCodes ?? [])
       if (outcomeVals.length !== 2)
         return notApplicableResult(
           'logreg',
@@ -1109,14 +1152,14 @@ export function runTest(
       const colNames: string[] = ['(Intercept)']
       for (const n of scalePreds) colNames.push(n)
       for (const n of nominalPreds) {
-        const vals = getDistinctValues(completeRows, n).sort((a, b) => String(a).localeCompare(String(b)))
+        const vals = getDistinctValues(completeRows, n, getVar(n)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
         for (let i = 1; i < vals.length; i++) colNames.push(`${n}_${vals[i]} vs ${vals[0]}`)
       }
       let X: number[][] = completeRows.map((r) => {
         const row: number[] = [1]
         for (const n of scalePreds) row.push(Number(r[n]))
         for (const n of nominalPreds) {
-          const vals = getDistinctValues(completeRows, n).sort((a, b) => String(a).localeCompare(String(b)))
+          const vals = getDistinctValues(completeRows, n, getVar(n)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
           for (let i = 1; i < vals.length; i++) row.push(r[n] === vals[i] ? 1 : 0)
         }
         return row
@@ -1200,7 +1243,7 @@ export function runTest(
           'Need one scale or ordinal outcome and one categorical group variable.',
           'In Variable View, set outcome (Scale or Ordinal) and a Nominal group variable.'
         )
-      const groupVals = getDistinctValues(rows, groupName).sort((a, b) => String(a).localeCompare(String(b)))
+      const groupVals = getDistinctValues(rows, groupName, getVar(groupName)?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
       const samples = groupVals.map((g) =>
         rows
           .filter((r) => r[groupName] === g)
@@ -1342,11 +1385,16 @@ export function runTest(
           'In Variable View, add two or more scale variables for repeated measures.'
         )
       const [v1, v2] = measureNames.slice(0, 2)
+      const missing1 = getVar(v1)?.missingCodes ?? []
+      const missing2 = getVar(v2)?.missingCodes ?? []
       const pairs: number[][] = []
       for (const row of rows) {
         const a = row[v1]
         const b = row[v2]
-        if (typeof a === 'number' && !Number.isNaN(a) && typeof b === 'number' && !Number.isNaN(b)) pairs.push([a, b])
+        if (isUserMissing(a, missing1) || isUserMissing(b, missing2)) continue
+        const na = Number(a)
+        const nb = Number(b)
+        if (typeof na === 'number' && !Number.isNaN(na) && typeof nb === 'number' && !Number.isNaN(nb)) pairs.push([na, nb])
       }
       if (pairs.length < 3)
         return notApplicableResult(
@@ -1406,7 +1454,9 @@ export function runTest(
       const varNames = selectedVarNames?.length ? selectedVarNames : scaleVars.slice(0, 6).map((v) => v.name)
       if (!varNames.length)
         return notApplicableResult('pca', 'PCA', 'Need at least one scale variable.', 'In Variable View, set variables to Scale.')
-      const completeRows = rows.filter((r) => varNames.every((v) => r[v] != null && r[v] !== '' && !Number.isNaN(Number(r[v]))))
+      const completeRows = rows.filter((r) =>
+        varNames.every((v) => !isUserMissing(r[v], getVar(v)?.missingCodes ?? []) && !Number.isNaN(Number(r[v])))
+      )
       if (completeRows.length < 4)
         return notApplicableResult('pca', 'PCA', `Need at least 4 complete cases; you have ${completeRows.length}.`, 'Remove or impute missing values.')
       const X = completeRows.map((r) => varNames.map((v) => Number(r[v])))

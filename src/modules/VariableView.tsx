@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type {
   DatasetState,
   VariableMeta,
@@ -7,6 +7,7 @@ import type {
   VariableType,
   QuestionGroup,
   QuestionGroupType,
+  ValueLabel,
 } from '../types'
 import { parseCSV } from '../lib/csvParse'
 import { styles, theme } from '../theme'
@@ -47,24 +48,120 @@ const QUESTION_GROUP_TYPES: { value: QuestionGroupType; label: string }[] = [
   { value: 'group', label: 'Group (other)' },
 ]
 
+/** Tooltips for column headers: explain how to use each column/menu. */
 const COLUMN_TOOLTIPS: Record<string, string> = {
-  Name: 'Variable name from your file. Read-only; use Label for the display name used in reports.',
-  Type: 'How the value is stored: String, Numeric (integer/decimal), Date, or Yes/No.',
-  Label: 'Human-readable description (e.g. question text). Used in reports and test suggestions.',
-  Measure: 'Nominal = categories, no order. Ordinal = ordered categories. Scale = numeric, continuous.',
-  Role: 'Input, Target, or ID. Used by some analyses to pick outcome vs predictor.',
-  'Missing %': 'Share of empty or missing values. High missingness may affect analyses.',
-  'Question group': 'Group columns that belong to one question (e.g. checkbox set, matrix).',
-  'In analysis': 'Uncheck to exclude this variable from test suggestions and analyses.',
+  Name: 'Variable name from your file (read-only). Use the Label column to set the display name shown in reports.',
+  Type: 'Use the dropdown to choose how values are stored: String, Numeric (integer or decimal), Date, or Yes/No. Affects how the app reads the column.',
+  Label: 'Type or edit the display name or question text here. This is what appears in test suggestions and reports—use it to describe the variable clearly.',
+  Measure: 'Use the dropdown to set the measurement level: Nominal (categories, no order), Ordinal (ordered categories), or Scale (numeric). This determines which tests are suggested.',
+  Role: 'Use the dropdown to set role: Input, Target, or ID. Some analyses use this to pick outcome vs predictor variables.',
+  'Missing %': 'Shows the share of empty or missing values (and any codes you define below). High missingness may bias results.',
+  'Missing codes': 'Define values that count as missing (e.g. 99, 999, -1 or "Refused"). Comma-separated. These are excluded from all analyses.',
+  'Values': 'Value labels: map each code to a display label (e.g. 1 = Strongly disagree). Used in reports. Edit or add code = label pairs.',
+  'Question group': 'Use the dropdown to assign this variable to a question group (e.g. checkbox set, matrix). Create groups in the "Question groups" section below, then select one here.',
+  'In analysis': 'Leave checked to include this variable in test suggestions and analyses. Uncheck to hide it from analyses (variable stays in the table).',
+}
+
+/** Parse comma-separated missing codes string into (number | string)[] */
+function parseMissingCodesString(s: string): (number | string)[] {
+  if (!s.trim()) return []
+  return s.split(',').map((x) => {
+    const t = x.trim()
+    const n = Number(t)
+    return t !== '' && !Number.isNaN(n) ? n : t
+  }).filter((x) => x !== '' && x !== undefined)
+}
+
+/** Format missing codes array for display in input */
+function formatMissingCodes(codes: (number | string)[]): string {
+  return codes.map(String).join(', ')
+}
+
+/** Effective missing % for a variable: empty + user-defined missing codes */
+function effectiveMissingPct(rows: { [key: string]: string | number | null }[], varName: string, missingCodes: (number | string)[]): number {
+  if (!rows.length) return 0
+  const codeSet = new Set(missingCodes.map((c) => String(c)))
+  let missing = 0
+  for (const row of rows) {
+    const v = row[varName]
+    if (v === null || v === undefined || v === '') missing++
+    else if (codeSet.has(String(v))) missing++
+  }
+  return Math.round((missing / rows.length) * 1000) / 10
 }
 
 function ColHeader({ title }: { title: string }) {
   const tooltip = COLUMN_TOOLTIPS[title]
   return (
-    <th style={{ ...styles.tableHeader, paddingRight: 10 }} title={tooltip}>
-      {title}
-      {tooltip && <span style={{ marginLeft: 4, opacity: 0.7, fontWeight: 'normal' }} title={tooltip}>ⓘ</span>}
+    <th style={{ ...styles.tableHeader, paddingRight: 10 }}>
+      <span title={tooltip ?? ''} style={{ cursor: tooltip ? 'help' : 'default' }}>
+        {title}
+        {tooltip && <span style={{ marginLeft: 4, opacity: 0.7, fontWeight: 'normal' }} aria-hidden>ⓘ</span>}
+      </span>
     </th>
+  )
+}
+
+function ValueLabelsCell({ variable, onUpdate }: { variable: VariableMeta; onUpdate: (patch: Partial<VariableMeta>) => void }) {
+  const labels = variable.valueLabels ?? []
+  const [open, setOpen] = useState(false)
+  const addLabel = useCallback(() => {
+    onUpdate({ valueLabels: [...labels, { code: '', label: '' }] })
+  }, [labels, onUpdate])
+  const updateLabel = useCallback(
+    (idx: number, code: string | number, label: string) => {
+      const next = labels.map((l, i) => (i === idx ? { code, label } : l))
+      onUpdate({ valueLabels: next })
+    },
+    [labels, onUpdate]
+  )
+  const removeLabel = useCallback(
+    (idx: number) => {
+      onUpdate({ valueLabels: labels.filter((_, i) => i !== idx) })
+    },
+    [labels, onUpdate]
+  )
+  return (
+    <div style={{ minWidth: 120 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 12,
+          padding: 0,
+          color: theme.colors.accent,
+          textDecoration: 'underline',
+        }}
+      >
+        {labels.length} label{labels.length !== 1 ? 's' : ''}
+      </button>
+      {open && (
+        <div style={{ marginTop: 6, padding: 8, background: theme.colors.background, border: `1px solid ${theme.colors.border}`, borderRadius: 4 }}>
+          {labels.map((l, idx) => (
+            <div key={idx} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+              <input
+                value={String(l.code)}
+                onChange={(e) => updateLabel(idx, e.target.value, l.label)}
+                placeholder="Code"
+                style={{ width: 60, padding: '2px 4px', fontSize: 11 }}
+              />
+              <span style={{ fontSize: 11 }}>=</span>
+              <input
+                value={l.label}
+                onChange={(e) => updateLabel(idx, l.code, e.target.value)}
+                placeholder="Label"
+                style={{ flex: 1, minWidth: 0, padding: '2px 4px', fontSize: 11 }}
+              />
+              <button type="button" onClick={() => removeLabel(idx)} style={{ padding: '2px 6px', fontSize: 11, cursor: 'pointer' }} aria-label="Remove">×</button>
+            </div>
+          ))}
+          <button type="button" onClick={addLabel} style={{ marginTop: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}>+ Add</button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -245,6 +342,26 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
   const included = dataset.variables.filter((v) => v.includeInAnalysis !== false).length
   const excluded = dataset.variables.length - included
 
+  /** Validation warnings: Measure vs Type, high missing %, ordinal without value labels. Non-blocking. */
+  const validationWarnings = useMemo(() => {
+    const warnings: string[] = []
+    const rows = dataset.rows
+    for (const v of dataset.variables) {
+      if (v.includeInAnalysis === false) continue
+      const pct = v.missingCodes?.length
+        ? effectiveMissingPct(rows, v.name, v.missingCodes)
+        : v.missingPct
+      if (pct > 30) warnings.push(`"${v.label || v.name}" has high missing (${pct}%). Consider excluding or imputing.`)
+      if (v.measurementLevel === 'scale' && v.variableType === 'string')
+        warnings.push(`"${v.label || v.name}": Measure is Scale but Type is String — analyses may expect numeric values.`)
+      if ((v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') && v.variableType === 'date')
+        warnings.push(`"${v.label || v.name}": categorical Measure with Date type may not match expected codes.`)
+      if (v.measurementLevel === 'ordinal' && (!v.valueLabels || v.valueLabels.length === 0))
+        warnings.push(`"${v.label || v.name}" is Ordinal but has no value labels — consider adding labels for clearer reports.`)
+    }
+    return warnings
+  }, [dataset.variables, dataset.rows])
+
   return (
     <section>
       <header style={styles.sectionHeader}>
@@ -260,6 +377,23 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
           </span>
         )}
       </p>
+      {validationWarnings.length > 0 && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '10px 12px',
+            background: '#fef9e7',
+            border: '1px solid #f1c40f',
+            borderRadius: 6,
+            fontSize: 13,
+          }}
+          title="These checks help keep analyses consistent; they do not block processing."
+        >
+          <strong style={{ color: '#b7950b' }}>Checks:</strong>{' '}
+          {validationWarnings.slice(0, 5).join(' ')}
+          {validationWarnings.length > 5 && ` (+${validationWarnings.length - 5} more)`}
+        </div>
+      )}
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860, fontSize: 13 }}>
           <thead>
@@ -270,6 +404,8 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
               <ColHeader title="Measure" />
               <ColHeader title="Role" />
               <ColHeader title="Missing %" />
+              <ColHeader title="Missing codes" />
+              <ColHeader title="Values" />
               <ColHeader title="Question group" />
               <ColHeader title="In analysis" />
             </tr>
@@ -338,13 +474,31 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                   </select>
                 </td>
                 <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Missing %']}>
-                  {v.missingPct > 0 ? (
-                    <span style={v.missingPct > 30 ? { color: '#c0392b', fontWeight: 'bold' } : undefined}>
-                      {v.missingPct}%
-                    </span>
-                  ) : (
-                    '—'
-                  )}
+                  {(() => {
+                    const pct = v.missingCodes?.length
+                      ? effectiveMissingPct(dataset.rows, v.name, v.missingCodes)
+                      : v.missingPct
+                    return pct > 0 ? (
+                      <span style={pct > 30 ? { color: '#c0392b', fontWeight: 'bold' } : undefined}>
+                        {pct}%
+                      </span>
+                    ) : (
+                      '—'
+                    )
+                  })()}
+                </td>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Missing codes']}>
+                  <input
+                    type="text"
+                    value={formatMissingCodes(v.missingCodes ?? [])}
+                    onChange={(e) => updateVariable(i, { missingCodes: parseMissingCodesString(e.target.value) })}
+                    placeholder="e.g. 99, 999, Refused"
+                    style={{ width: '100%', maxWidth: 140, padding: '4px 6px', fontSize: 12 }}
+                    title="Comma-separated values to treat as missing"
+                  />
+                </td>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Values']}>
+                  <ValueLabelsCell variable={v} onUpdate={(patch) => updateVariable(i, patch)} />
                 </td>
                 <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Question group']}>
                   <select

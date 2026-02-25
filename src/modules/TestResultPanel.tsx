@@ -22,14 +22,28 @@ interface TestResultPanelProps {
   onClose?: () => void
 }
 
+/** Resolve display value: use value label for a variable's code when available. */
+function cellDisplay(
+  header: string,
+  value: unknown,
+  valueLabelMaps?: Record<string, Record<string, string>>,
+  varName?: string
+): string {
+  if (value == null) return '—'
+  const s = String(value)
+  if (header === 'Value' && valueLabelMaps && varName && valueLabelMaps[varName]?.[s]) return valueLabelMaps[varName][s]
+  return s
+}
+
 export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
-  const { testName, table, chart, insight, keyStat, variablesAnalyzed, plainLanguage, nextStep } = result
+  const { testName, table, chart, insight, keyStat, variablesAnalyzed, plainLanguage, nextStep, valueLabelMaps } = result
   const safeTable = Array.isArray(table) ? table : []
   const tableHeaders = safeTable.length > 0 ? Object.keys(safeTable[0]) : []
   const safeChart = chart && Array.isArray(chart.data) && chart.data.length > 0 ? chart : null
   const resultValidation = validateTestResult(result)
   const canTogglePercent = safeChart?.type === 'bar' && safeChart.percentKey && safeChart.data.every((d) => safeChart.percentKey && d[safeChart.percentKey] != null)
   const [chartShowPercent, setChartShowPercent] = useState(true)
+  const valueVarName = tableHeaders.includes('Value') ? variablesAnalyzed?.[0]?.name : undefined
 
   return (
     <div
@@ -125,7 +139,7 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
                 <tr key={i}>
                   {tableHeaders.map((h) => (
                     <td key={h} style={styles.tableCell}>
-                      {String(row[h] ?? '—')}
+                      {cellDisplay(h, row[h], valueLabelMaps, valueVarName)}
                     </td>
                   ))}
                 </tr>
