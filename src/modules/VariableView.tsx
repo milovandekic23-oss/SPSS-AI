@@ -287,21 +287,25 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
       const reader = new FileReader()
       reader.onload = () => {
         try {
-          const text = String(reader.result ?? '')
+          let text = String(reader.result ?? '')
+          if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
           const { variables, rows } = parseCSV(text)
           if (!variables?.length) {
             setError('No columns or data found in the CSV. Use a header row and at least one data row.')
             e.target.value = ''
             return
           }
-          onDatasetChange({
+          const next: DatasetState = {
             variables,
-            rows: rows ?? [],
+            rows: Array.isArray(rows) ? rows : [],
             variableViewConfirmed: false,
             questionGroups: [],
-          })
+          }
           setSummaryAck(false)
           e.target.value = ''
+          requestAnimationFrame(() => {
+            onDatasetChange(next)
+          })
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to parse CSV.')
           e.target.value = ''
@@ -331,6 +335,32 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
     onDatasetChange({ ...dataset, variableViewConfirmed: true })
     setSummaryAck(true)
   }, [dataset, onDatasetChange])
+
+  /** Validation warnings — must run before any early return (Rules of Hooks). */
+  const validationWarnings = useMemo(() => {
+    if (!dataset?.variables?.length || !Array.isArray(dataset.rows)) return []
+    const warnings: string[] = []
+    const rows = dataset.rows
+    for (const v of dataset.variables) {
+      if (v.includeInAnalysis === false) continue
+      const pct = v.missingCodes?.length
+        ? effectiveMissingPct(rows, v.name, v.missingCodes)
+        : v.missingPct
+      if (pct > 30) warnings.push(`"${v.label || v.name}" has high missing (${pct}%). Consider excluding or imputing.`)
+      if (pct > 20 && pct <= 30) warnings.push(`"${v.label || v.name}" has >20% missing (${pct}%) — prioritize lower-missing variables for key analyses.`)
+      if (v.measurementLevel === 'scale' && v.variableType === 'string')
+        warnings.push(`"${v.label || v.name}": Measure is Scale but Type is String — analyses may expect numeric values.`)
+      if ((v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') && v.variableType === 'date')
+        warnings.push(`"${v.label || v.name}": categorical Measure with Date type may not match expected codes.`)
+      if (v.measurementLevel === 'ordinal' && (!v.valueLabels || v.valueLabels.length === 0))
+        warnings.push(`"${v.label || v.name}" is Ordinal but has no value labels — consider adding labels for clearer reports.`)
+      if (v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') {
+        const share = maxCategoryShare(rows, v.name, v.missingCodes ?? [])
+        if (share > 90) warnings.push(`"${v.label || v.name}" has one response >90% — low variance for group comparisons.`)
+      }
+    }
+    return warnings
+  }, [dataset?.variables, dataset?.rows])
 
   if (!dataset || !Array.isArray(dataset.variables) || dataset.variables.length === 0) {
     return (
@@ -375,31 +405,6 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
   const scale = dataset.variables.filter((v) => v.measurementLevel === 'scale').length
   const included = dataset.variables.filter((v) => v.includeInAnalysis !== false).length
   const excluded = dataset.variables.length - included
-
-  /** Validation warnings: Measure vs Type, high missing %, ordinal without value labels. Non-blocking. */
-  const validationWarnings = useMemo(() => {
-    const warnings: string[] = []
-    const rows = dataset.rows
-    for (const v of dataset.variables) {
-      if (v.includeInAnalysis === false) continue
-      const pct = v.missingCodes?.length
-        ? effectiveMissingPct(rows, v.name, v.missingCodes)
-        : v.missingPct
-      if (pct > 30) warnings.push(`"${v.label || v.name}" has high missing (${pct}%). Consider excluding or imputing.`)
-      if (pct > 20 && pct <= 30) warnings.push(`"${v.label || v.name}" has >20% missing (${pct}%) — prioritize lower-missing variables for key analyses.`)
-      if (v.measurementLevel === 'scale' && v.variableType === 'string')
-        warnings.push(`"${v.label || v.name}": Measure is Scale but Type is String — analyses may expect numeric values.`)
-      if ((v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') && v.variableType === 'date')
-        warnings.push(`"${v.label || v.name}": categorical Measure with Date type may not match expected codes.`)
-      if (v.measurementLevel === 'ordinal' && (!v.valueLabels || v.valueLabels.length === 0))
-        warnings.push(`"${v.label || v.name}" is Ordinal but has no value labels — consider adding labels for clearer reports.`)
-      if (v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') {
-        const share = maxCategoryShare(rows, v.name, v.missingCodes ?? [])
-        if (share > 90) warnings.push(`"${v.label || v.name}" has one response >90% — low variance for group comparisons.`)
-      }
-    }
-    return warnings
-  }, [dataset.variables, dataset.rows])
 
   return (
     <section>
@@ -683,7 +688,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         )}
       </div>
 
-      <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={confirmVariableView}
@@ -691,6 +696,14 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
           title="Confirm variable settings and enable Test Suggester and Insights."
         >
           Process Data
+        </button>
+        <button
+          type="button"
+          onClick={() => onDatasetChange(null)}
+          style={{ ...styles.btn, marginTop: 0, background: 'transparent', color: theme.colors.textMuted }}
+          title="Clear data and upload a different file."
+        >
+          Start over
         </button>
         {dataset.variableViewConfirmed && summaryAck && (
           <span style={{ ...styles.textBody, opacity: 0.7 }} title="You can now run tests or generate the report.">✅ Confirmed. Use Test Suggester or Insights.</span>

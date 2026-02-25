@@ -46,15 +46,22 @@ export function parseCSV(csvText: string): { variables: VariableMeta[]; rows: Da
   if (rows.length < 2) return { variables: [], rows: [] }
 
   const rawHeaders = rows[0]
+  const seen = new Set<string>()
   const headers: string[] = rawHeaders.map((h, j) => {
-    const s = (h != null ? String(h).trim() : '') || `Column_${j + 1}`
+    let s = (h != null ? String(h).trim() : '') || `Column_${j + 1}`
+    if (seen.has(s)) {
+      let k = 1
+      while (seen.has(`${s}_${k}`)) k++
+      s = `${s}_${k}`
+    }
+    seen.add(s)
     return s
   })
   const dataRows: DataRow[] = []
   const colValues: (string | number | null)[][] = headers.map(() => [])
 
   for (let i = 1; i < rows.length; i++) {
-    const row = rows[i]
+    const row = Array.isArray(rows[i]) ? rows[i] : []
     const obj: DataRow = {}
     headers.forEach((h, j) => {
       const raw = row[j] ?? ''
