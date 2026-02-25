@@ -83,8 +83,8 @@ git push
 
 After a minute or two, your live site will update.
 
-- **Live site URL:** `https://YOUR_USERNAME.github.io/AI-SPSS/` (if the repo is named `AI-SPSS`).
-- **Repo URL:** `https://github.com/YOUR_USERNAME/AI-SPSS`.
+- **Live site URL:** `https://milovandekic23-oss.github.io/SPSS-AI/`
+- **Repo URL:** `https://github.com/milovandekic23-oss/SPSS-AI`
 
 ---
 
