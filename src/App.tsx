@@ -3,6 +3,7 @@ import { VariableView } from './modules/VariableView'
 import { TestSuggester } from './modules/TestSuggester'
 import { Insights } from './modules/Insights'
 import { DataReadinessPanel, getDataReadinessForApp } from './modules/DataReadinessPanel'
+import { ApiKeyInput } from './modules/ApiKeyInput'
 import { canProceedToTests } from './lib/dataReadiness'
 import type { DatasetState } from './types'
 import { styles } from './theme'
@@ -40,6 +41,7 @@ class MainErrorBoundary extends Component<{ children: React.ReactNode }, { error
 function App() {
   const [dataset, setDataset] = useState<DatasetState | null>(null)
   const [activeModule, setActiveModule] = useState<'variable' | 'tests' | 'insights'>('variable')
+  const [apiKey, setApiKey] = useState('')
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -70,11 +72,12 @@ function App() {
             Assistant
           </h1>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'space-between' }}>
           <p style={styles.appDesc}>
             Automated statistical analysis tool. Upload datasets to generate hypothesis tests,
             p-value calculations, and distribution insights with minimal configuration.
           </p>
+          <ApiKeyInput apiKey={apiKey} onApiKeyChange={setApiKey} />
         </div>
       </header>
 
@@ -119,7 +122,7 @@ function App() {
             <TestSuggester dataset={dataset} />
           )}
           {activeModule === 'insights' && dataset?.variableViewConfirmed && (
-            <Insights dataset={dataset} />
+            <Insights dataset={dataset} apiKey={apiKey} />
           )}
         </MainErrorBoundary>
       </main>
