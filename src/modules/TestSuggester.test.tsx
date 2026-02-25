@@ -33,18 +33,23 @@ describe('TestSuggester', () => {
     const dataset = makeDataset()
     const user = userEvent.setup()
     render(<TestSuggester dataset={dataset} />)
-    const buttons = screen.getAllByRole('button', { name: /Run this test/i })
-    expect(buttons.length).toBeGreaterThan(0)
-    await user.click(buttons[0])
+    const freqCard = screen.getByTestId('test-card-freq')
+    const runButton = freqCard.querySelector('button')
+    expect(runButton).toBeInTheDocument()
+    await user.click(runButton!)
     const panel = document.querySelector('[data-testid="test-result-panel"]')
     expect(panel).toBeInTheDocument()
     expect(panel!.textContent).toMatch(/Frequencies for|insight|Message|Error/)
   }, 5000)
 
   it('Run button is not disabled when no suggested vars (always clickable)', () => {
-    const dataset = makeDataset()
-    dataset.variables[0].measurementLevel = 'nominal'
-    dataset.variables[1].measurementLevel = 'nominal'
+    const dataset = {
+      ...makeDataset(),
+      variables: [
+        { ...makeDataset().variables[0], measurementLevel: 'nominal' as const },
+        { ...makeDataset().variables[1], measurementLevel: 'nominal' as const },
+      ],
+    }
     render(<TestSuggester dataset={dataset} />)
     const runButtons = screen.getAllByRole('button', { name: /Run this test/i })
     runButtons.forEach((btn) => {

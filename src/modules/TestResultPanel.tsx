@@ -11,6 +11,7 @@ import {
   Cell,
 } from 'recharts'
 import type { TestResult } from '../lib/statsRunner'
+import { validateTestResult } from '../lib/resultValidator'
 
 const CHART_COLORS = ['#3498db', '#2ecc71', '#e74c3c', '#9b59b6', '#f39c12']
 
@@ -24,6 +25,7 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
   const safeTable = Array.isArray(table) ? table : []
   const tableHeaders = safeTable.length > 0 ? Object.keys(safeTable[0]) : []
   const safeChart = chart && Array.isArray(chart.data) && chart.data.length > 0 ? chart : null
+  const resultValidation = validateTestResult(result)
 
   return (
     <div
@@ -63,6 +65,15 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
       )}
 
       <p style={{ margin: '0 0 16px', lineHeight: 1.5, color: '#34495e' }}>💡 {insight}</p>
+
+      <div style={{ fontSize: 12, marginBottom: 16 }} data-testid="result-supervisor">
+        <strong>Result check:</strong>{' '}
+        {resultValidation.consistent ? (
+          <span style={{ color: '#27ae60' }}>Result and interpretation are consistent.</span>
+        ) : (
+          <span style={{ color: '#e67e22' }}>{resultValidation.issues.join(' ')}</span>
+        )}
+      </div>
 
       {safeTable.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 20 }}>

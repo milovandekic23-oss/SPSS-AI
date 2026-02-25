@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { DatasetState } from '../types'
 import { getSuggestedVariables, runTest, type TestId, type TestResult } from '../lib/statsRunner'
 import { getTestGuidance } from '../lib/statisticalGuidance'
+import { validateTestChoice } from '../lib/testChoiceValidator'
 import { TestResultPanel } from './TestResultPanel'
 
 interface TestSuggesterProps {
@@ -100,10 +101,7 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
 
       {result && (
         <div ref={resultPanelRef} data-testid="test-result-panel">
-          <TestResultPanel
-            result={result}
-            onClose={() => setResult(null)}
-          />
+          <TestResultPanel result={result} onClose={() => setResult(null)} />
         </div>
       )}
     </section>
@@ -124,9 +122,11 @@ function TestCard({
   const guidance = getTestGuidance(testId)
   const suggested = getSuggestedVariables(testId, dataset)
   const hasVars = suggested.variables.length > 0
+  const choiceValidation = validateTestChoice(testId, dataset)
 
   return (
     <div
+      data-testid={`test-card-${testId}`}
       style={{
         border: '1px solid #bdc3c7',
         borderRadius: 8,
@@ -146,6 +146,33 @@ function TestCard({
         {hasVars
           ? suggested.variables.map((v) => `${v.label} (${v.role})`).join('; ')
           : 'No matching variables in your data — run anyway to see requirements.'}
+      </div>
+      <div style={{ fontSize: 12, marginBottom: 8 }} data-testid={`supervisor-${testId}`}>
+        <strong>Supervisor:</strong>{' '}
+        {choiceValidation.valid ? (
+          <span style={{ color: '#27ae60' }}>
+            OK to run.
+            {choiceValidation.warnings.length > 0 && (
+              <span style={{ color: '#e67e22' }}> {choiceValidation.warnings.join(' ')}</span>
+            )}
+            {choiceValidation.suggestedAlternative && (
+              <span style={{ color: '#3498db' }}>
+                {' '}
+                Consider {getTestGuidance(choiceValidation.suggestedAlternative).name} instead.
+              </span>
+            )}
+          </span>
+        ) : (
+          <span style={{ color: '#e74c3c' }}>
+            {choiceValidation.warnings.join(' ')}
+            {choiceValidation.suggestedAlternative && (
+              <span style={{ color: '#3498db' }}>
+                {' '}
+                Try {getTestGuidance(choiceValidation.suggestedAlternative).name} instead.
+              </span>
+            )}
+          </span>
+        )}
       </div>
       <details style={{ fontSize: 12, color: '#6c757d', marginBottom: 10 }}>
         <summary style={{ cursor: 'pointer' }}>Assumptions & alternatives</summary>
