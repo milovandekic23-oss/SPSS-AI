@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { DatasetState } from '../types'
 import { runInsightsReport, getHeadline, type InsightsReport, type ReportFinding } from '../lib/insightsReport'
 import { TestResultPanel } from './TestResultPanel'
+import { styles, theme } from '../theme'
 
 interface InsightsProps {
   dataset: DatasetState
@@ -23,15 +24,19 @@ export function Insights({ dataset }: InsightsProps) {
 
   return (
     <section>
-      <h2>Insights & Charts</h2>
-      <p style={{ color: '#2c3e50', marginBottom: 16 }}>
+      <header style={styles.sectionHeader}>
+        <h2 style={styles.textSection}>
+          Distribution<sup style={styles.sup}>3</sup>
+        </h2>
+      </header>
+      <p style={{ ...styles.textBody, marginBottom: 16 }}>
         Generate a report from your data. The platform runs the applicable analyses and surfaces the main findings.
         All insights are computed from your dataset — no external API is used.
       </p>
 
       {!report && (
         <>
-          <p style={{ marginBottom: 12 }}>
+          <p style={{ ...styles.textBody, marginBottom: 12 }}>
             Your dataset has <strong>{dataset.variables.length} variables</strong> and <strong>n = {dataset.rows.length}</strong> rows.
           </p>
           <button
@@ -39,14 +44,11 @@ export function Insights({ dataset }: InsightsProps) {
             onClick={handleGenerate}
             disabled={loading}
             style={{
-              padding: '0.5rem 1.25rem',
-              background: loading ? '#95a5a6' : '#3498db',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
+              ...styles.btn,
+              ...styles.btnPrimary,
+              marginTop: 0,
+              opacity: loading ? 0.7 : 1,
               cursor: loading ? 'default' : 'pointer',
-              fontWeight: 600,
-              fontSize: 15,
             }}
           >
             {loading ? 'Generating report…' : 'Generate report'}
@@ -55,7 +57,7 @@ export function Insights({ dataset }: InsightsProps) {
       )}
 
       {report && report.findings.length === 0 && (
-        <p style={{ padding: 16, background: '#fef9e7', borderRadius: 8, color: '#7d6608' }}>
+        <p style={{ padding: 16, background: theme.colors.surfaceMuted, border: `1px solid ${theme.colors.border}`, fontSize: 13 }}>
           No analyses could be run with the current variable setup. Confirm Variable View (measurement levels) and try again.
         </p>
       )}
@@ -82,22 +84,20 @@ function ReportView({
     <div style={{ marginTop: 24 }}>
       <div
         style={{
-          padding: 16,
-          background: '#f8f9fa',
-          borderLeft: '4px solid #3498db',
-          borderRadius: 8,
+          ...styles.chartContainer,
+          borderLeft: `4px solid ${theme.colors.accent}`,
           marginBottom: 24,
         }}
       >
-        <p style={{ margin: 0, lineHeight: 1.5, color: '#2c3e50' }}>
+        <p style={{ margin: 0, ...styles.textBody }}>
           <strong>What you’re seeing:</strong> The report below is built from analyses run on your data. Important findings are listed first; expand any section for the full table, chart, and interpretation. Every insight comes from computed results only — nothing is fabricated.
         </p>
       </div>
 
       {keyFindings.length > 0 && (
         <div style={{ marginBottom: 28 }}>
-          <h3 style={{ fontSize: 18, marginBottom: 12, color: '#2c3e50' }}>Key findings</h3>
-          <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6, color: '#34495e' }}>
+          <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Key findings</h3>
+          <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6, ...styles.textBody }}>
             {keyFindings.map((f, i) => (
               <li key={i} style={{ marginBottom: 6 }}>
                 {f.validation.consistent ? (
@@ -116,8 +116,8 @@ function ReportView({
         </div>
       )}
 
-      <h3 style={{ fontSize: 18, marginBottom: 12, color: '#2c3e50' }}>Full report</h3>
-      <p style={{ fontSize: 14, color: '#6c757d', marginBottom: 16 }}>
+      <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Full report</h3>
+      <p style={{ ...styles.textBody, opacity: 0.7, marginBottom: 16 }}>
         Expand any section to see the full table, chart, and what the result means.
       </p>
 
@@ -131,13 +131,10 @@ function ReportView({
           onClick={onRegenerate}
           disabled={loading}
           style={{
-            padding: '0.4rem 1rem',
-            background: loading ? '#bdc3c7' : '#ecf0f1',
-            color: '#2c3e50',
-            border: '1px solid #bdc3c7',
-            borderRadius: 6,
+            ...styles.btn,
+            marginTop: 0,
+            opacity: loading ? 0.6 : 1,
             cursor: loading ? 'default' : 'pointer',
-            fontSize: 14,
           }}
         >
           {loading ? 'Regenerating…' : 'Regenerate report'}
@@ -158,9 +155,7 @@ function FindingBlock({ finding }: { finding: ReportFinding }) {
     <details
       style={{
         marginBottom: 12,
-        border: '1px solid #bdc3c7',
-        borderRadius: 8,
-        background: '#fff',
+        ...styles.chartContainer,
         overflow: 'hidden',
       }}
     >
@@ -170,13 +165,13 @@ function FindingBlock({ finding }: { finding: ReportFinding }) {
           cursor: 'pointer',
           fontWeight: 600,
           fontSize: 14,
-          color: '#2c3e50',
+          ...styles.textBody,
           listStyle: 'none',
         }}
       >
         <span style={{ marginRight: 8 }}>▸</span> {summaryLabel}
       </summary>
-      <div style={{ padding: '0 16px 16px', borderTop: '1px solid #ecf0f1' }}>
+      <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${theme.colors.border}` }}>
         <TestResultPanel result={result} />
       </div>
     </details>

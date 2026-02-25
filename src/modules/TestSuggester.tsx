@@ -4,6 +4,7 @@ import { getSuggestedVariables, runTest, type TestId, type TestResult } from '..
 import { getTestGuidance } from '../lib/statisticalGuidance'
 import { validateTestChoice } from '../lib/testChoiceValidator'
 import { TestResultPanel } from './TestResultPanel'
+import { styles, theme } from '../theme'
 
 interface TestSuggesterProps {
   dataset: DatasetState
@@ -53,17 +54,21 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
 
   return (
     <section>
-      <h2>Smart Test Suggester</h2>
-      <p>
+      <header style={styles.sectionHeader}>
+        <h2 style={styles.textSection}>
+          Recommended Tests<sup style={styles.sup}>2</sup>
+        </h2>
+      </header>
+      <p style={{ ...styles.textBody, marginBottom: 24 }}>
         Your dataset has <strong>{dataset.variables.length} variables</strong> and <strong>n = {n}</strong> rows.
         {n < 30 && (
-          <span style={{ color: '#e67e22', marginLeft: 8 }}>
+          <span style={{ marginLeft: 8, opacity: 0.8 }}>
             ⚠ Sample size is under 30; consider non-parametric alternatives for group comparisons.
           </span>
         )}
       </p>
 
-      <h3>📊 Tier 1 — Descriptive statistics (run first)</h3>
+      <h3 style={{ ...styles.textLabel, marginBottom: 12, opacity: 0.7 }}>Tier 1 — Descriptive statistics (run first)</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER1.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>
@@ -72,7 +77,7 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
         ))}
       </ul>
 
-      <h3>📈 Tier 2 — Bivariate: association & group comparison</h3>
+      <h3 style={{ ...styles.textLabel, marginBottom: 12, opacity: 0.7 }}>Tier 2 — Bivariate: association & group comparison</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER2.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>
@@ -81,7 +86,7 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
         ))}
       </ul>
 
-      <h3>🔬 Tier 3 — Regression & non-parametric</h3>
+      <h3 style={{ ...styles.textLabel, marginBottom: 12, opacity: 0.7 }}>Tier 3 — Regression & non-parametric</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER3.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>
@@ -90,7 +95,7 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
         ))}
       </ul>
 
-      <h3>📐 Tier 4 — Multivariate</h3>
+      <h3 style={{ ...styles.textLabel, marginBottom: 12, opacity: 0.7 }}>Tier 4 — Multivariate</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER4.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>
@@ -135,15 +140,12 @@ function TestCard({
     <div
       data-testid={`test-card-${testId}`}
       style={{
-        border: '1px solid #bdc3c7',
-        borderLeft: '4px solid #3498db',
-        borderRadius: 8,
-        padding: 16,
-        background: '#fff',
+        ...styles.suggestionCard,
+        borderLeft: `4px solid ${theme.colors.accent}`,
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>✅ {guidance.name}</div>
-      <div style={{ fontSize: 14, color: '#2c3e50', marginBottom: 10, lineHeight: 1.4 }}>
+      <div style={{ ...styles.suggestionTitle, fontSize: 18, marginBottom: 4 }}>✅ {guidance.name}</div>
+      <div style={{ ...styles.textBody, marginBottom: 10 }}>
         {guidance.summary}
       </div>
       <details style={{ fontSize: 13, color: '#2c3e50', marginBottom: 8 }}>
@@ -217,11 +219,10 @@ function TestCard({
         disabled={running}
         title="Run this analysis (always runs when you click; shows result or requirement message)"
         style={{
-          padding: '0.35rem 0.75rem',
-          background: running ? '#95a5a6' : '#3498db',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 4,
+          ...styles.btn,
+          ...styles.btnPrimary,
+          marginTop: 8,
+          opacity: running ? 0.7 : 1,
           cursor: running ? 'default' : 'pointer',
         }}
       >

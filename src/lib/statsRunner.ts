@@ -123,6 +123,10 @@ export interface TestResult {
   keyStat?: string
   /** Variables/questions analyzed (for clear display in result panel) */
   variablesAnalyzed?: { label: string; role?: string }[]
+  /** Plain-language takeaway: "In practice: ..." */
+  plainLanguage?: string
+  /** Short actionable recommendation: "Next step: ..." */
+  nextStep?: string
 }
 
 function getNumericValues(rows: DataRow[], varName: string): number[] {
@@ -403,12 +407,20 @@ export function runTest(
         total > 0
           ? `Frequencies for "${varLabel}": ${table.length} categories. ${table.slice(0, 3).map((r) => `${r.Value}: ${r.Count} (${r.Percent}%)`).join('; ')}${table.length > 3 ? '…' : ''}.`
           : 'No data for this variable.'
+      const topCategory = table.length > 0 ? table.reduce((a, b) => (Number(a.Percent) >= Number(b.Percent) ? a : b)) : null
+      const plainLanguage =
+        total > 0 && topCategory
+          ? `In practice: most responses are "${String(topCategory.Value)}" (${topCategory.Percent}%); ${table.length > 1 ? 'see the table for all categories.' : 'single category.'}`
+          : undefined
+      const nextStep = 'Next step: use these counts to check distributions before chi-square or other tests; watch for categories with very low counts.'
       return {
         testId,
         testName: 'Frequencies & percentages',
         table,
         chart,
         insight,
+        plainLanguage,
+        nextStep,
         variablesAnalyzed: [{ label: varLabel, role: 'variable' }],
       }
     }
@@ -446,16 +458,24 @@ export function runTest(
               yKey: 'value',
             }
           : undefined
+      const varNames = toUse.map((name) => getVar(name)?.label ?? name).join(', ')
       const insight =
         table.length > 0
-          ? `Descriptive statistics for ${table.length} variable(s). Sample sizes range from ${Math.min(...table.map((r) => Number(r.N)))} to ${Math.max(...table.map((r) => Number(r.N)))}. Use these to summarize central tendency and spread before running inferential tests.`
+          ? `Descriptive statistics for: ${varNames}. N ranges from ${Math.min(...table.map((r) => Number(r.N)))} to ${Math.max(...table.map((r) => Number(r.N)))}. Use these to summarize central tendency and spread before inferential tests.`
           : 'No scale variables to summarize.'
+      const plainLanguage =
+        table.length > 0
+          ? 'In practice: use these means and SDs to describe your sample; check min/max for outliers and spread.'
+          : undefined
+      const nextStep = 'Next step: report these before t-tests or ANOVA; if distributions are skewed, consider median and IQR instead.'
       return {
         testId,
         testName: 'Mean, SD, Min, Max',
         table,
         chart,
         insight,
+        plainLanguage,
+        nextStep,
         variablesAnalyzed: toUse.map((name) => ({ label: getVar(name)?.label ?? name, role: 'variable' })),
       }
     }
@@ -467,11 +487,21 @@ export function runTest(
         return { Variable: v.label, Missing: missing, Total: n, 'Missing %': pct }
       })
       const worst = table.filter((r) => Number(r['Missing %']) > 30)
+      const hasAny = table.filter((r) => Number(r.Missing) > 0).length
       const insight =
         worst.length > 0
-          ? `⚠ ${worst.length} variable(s) have more than 30% missing: ${worst.map((r) => r.Variable).join(', ')}. Consider excluding or imputing before analysis.`
-          : `Missing summary: ${table.filter((r) => Number(r.Missing) > 0).length} variable(s) have at least one missing value.`
-      return { testId, testName: 'Missing value summary', table, insight }
+          ? `Missing values for your variables: ${worst.length} have more than 30% missing — ${worst.map((r) => r.Variable).join(', ')}. Consider excluding or imputing before analysis.`
+          : hasAny > 0
+            ? `Missing summary: ${hasAny} variable(s) have at least one missing value. See table for counts and %.`
+            : 'No missing values in the variables checked.'
+      const plainLanguage =
+        worst.length > 0
+          ? `In practice: ${worst.map((r) => r.Variable).join(', ')} have high missingness; results using these variables may be biased.`
+          : hasAny > 0
+            ? 'In practice: missingness is low to moderate; listwise deletion or simple imputation may be fine.'
+            : 'In practice: no missing data in the variables summarized.'
+      const nextStep = worst.length > 0 ? 'Next step: consider excluding or imputing high-missingness variables before running further analyses.' : 'Next step: you can proceed with analyses; report N per analysis if some variables have missing values.'
+      return { testId, testName: 'Missing value summary', table, insight, plainLanguage, nextStep }
     }
 
     case 'crosstab': {
@@ -564,8 +594,16 @@ export function runTest(
         xKey: 'name',
         yKey: 'count',
       }
+      const rowLabel = getVar(rowVar)?.label ?? rowVar
+      const colLabel = getVar(colVar)?.label ?? colVar
       const sig = df >= 1 && chiSq > 3.84
-      const insight = `Chi-Square = ${chiSq.toFixed(2)}, df = ${df}. ${sig ? 'The association is statistically significant (p < 0.05).' : 'The association is not statistically significant at α = 0.05.'}`
+      const insight = `Association between "${rowLabel}" and "${colLabel}": Chi-Square = ${chiSq.toFixed(2)}, df = ${df}. ${sig ? 'The association is statistically significant (p < 0.05).' : 'The association is not statistically significant at α = 0.05.'}`
+      const plainLanguage = sig
+        ? `In practice: "${rowLabel}" and "${colLabel}" are associated in your sample; the pattern in the table shows how they relate.`
+        : `In practice: we don't see evidence of association between "${rowLabel}" and "${colLabel}" in this dataset.`
+      const nextStep = sig
+        ? 'Next step: report this association and the cell counts; if any expected count was < 5, consider Fisher’s exact or collapsing categories.'
+        : 'Next step: you can report "no evidence of association"; consider confidence intervals or a larger sample if you need more precision.'
       return {
         testId,
         testName: 'Crosstabulation + Chi-Square',
@@ -573,9 +611,11 @@ export function runTest(
         chart,
         insight,
         keyStat: `χ² = ${chiSq.toFixed(2)}, df = ${df}`,
+        plainLanguage,
+        nextStep,
         variablesAnalyzed: [
-          { label: getVar(rowVar)?.label ?? rowVar, role: 'row variable' },
-          { label: getVar(colVar)?.label ?? colVar, role: 'column variable' },
+          { label: rowLabel, role: 'row variable' },
+          { label: colLabel, role: 'column variable' },
         ],
       }
     }
@@ -621,9 +661,18 @@ export function runTest(
         xKey: 'x',
         yKey: 'y',
       }
+      const v1Label = getVar(v1)?.label ?? v1
+      const v2Label = getVar(v2)?.label ?? v2
       const strength = Math.abs(r) < 0.3 ? 'weak' : Math.abs(r) < 0.6 ? 'moderate' : 'strong'
       const dir = r > 0 ? 'positive' : 'negative'
-      const insight = `Correlation is ${strength} and ${dir} (r = ${r.toFixed(3)}, p ${p < 0.05 ? '<' : '≥'} 0.05). ${p < 0.05 ? 'The relationship is statistically significant.' : 'The relationship is not statistically significant at α = 0.05.'}`
+      const insight = `Relationship between "${v1Label}" and "${v2Label}": ${strength} ${dir} correlation (r = ${r.toFixed(3)}, p ${p < 0.05 ? '<' : '≥'} 0.05). ${p < 0.05 ? 'The relationship is statistically significant.' : 'The relationship is not statistically significant at α = 0.05.'}`
+      const plainLanguage =
+        p < 0.05
+          ? `In practice: higher "${v1Label}" tends to go with ${r > 0 ? 'higher' : 'lower'} "${v2Label}" in your sample (${strength} ${dir}).`
+          : `In practice: we don't see a clear linear link between "${v1Label}" and "${v2Label}" in this dataset.`
+      const nextStep = p < 0.05
+        ? 'Next step: report this correlation; if you have confounders or want to predict one from the other, consider regression.'
+        : 'Next step: you can report "no significant linear association"; consider a scatterplot or Spearman if the relationship might be non-linear.'
       return {
         testId,
         testName: 'Pearson correlation',
@@ -631,9 +680,11 @@ export function runTest(
         chart,
         insight,
         keyStat: `r = ${r.toFixed(3)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
         variablesAnalyzed: [
-          { label: getVar(v1)?.label ?? v1, role: 'variable 1' },
-          { label: getVar(v2)?.label ?? v2, role: 'variable 2' },
+          { label: v1Label, role: 'variable 1' },
+          { label: v2Label, role: 'variable 2' },
         ],
       }
     }
@@ -681,8 +732,17 @@ export function runTest(
         xKey: 'x',
         yKey: 'y',
       }
+      const v1Label = getVar(v1)?.label ?? v1
+      const v2Label = getVar(v2)?.label ?? v2
       const strength = Math.abs(rho) < 0.3 ? 'weak' : Math.abs(rho) < 0.6 ? 'moderate' : 'strong'
-      const insight = `Spearman ρ = ${rho.toFixed(3)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${strength} monotonic association. ${p < 0.05 ? 'Statistically significant.' : 'Not significant at α = 0.05.'}`
+      const insight = `Monotonic association between "${v1Label}" and "${v2Label}": Spearman ρ = ${rho.toFixed(3)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${strength} monotonic association. ${p < 0.05 ? 'Statistically significant.' : 'Not significant at α = 0.05.'}`
+      const plainLanguage =
+        p < 0.05
+          ? `In practice: higher ranks in "${v1Label}" tend to go with ${rho > 0 ? 'higher' : 'lower'} ranks in "${v2Label}" (${strength}).`
+          : `In practice: we don't see a clear monotonic link between "${v1Label}" and "${v2Label}" in this dataset.`
+      const nextStep = p < 0.05
+        ? 'Next step: report Spearman ρ; use when the relationship may be non-linear but monotonic.'
+        : 'Next step: you can report "no significant monotonic association"; consider Pearson if a linear fit is plausible.'
       return {
         testId: 'spearman',
         testName: 'Spearman rank correlation',
@@ -690,6 +750,12 @@ export function runTest(
         chart,
         insight,
         keyStat: `ρ = ${rho.toFixed(3)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: [
+          { label: v1Label, role: 'variable 1' },
+          { label: v2Label, role: 'variable 2' },
+        ],
       }
     }
 
@@ -754,8 +820,18 @@ export function runTest(
         xKey: 'name',
         yKey: 'mean',
       }
+      const outcomeLabel = getVar(outcomeName)?.label ?? outcomeName
+      const groupLabel = getVar(groupName)?.label ?? groupName
       const leveneNote = leveneP < 0.05 ? ' Variances differ (Levene p < 0.05); prefer Welch t.' : ' Variances similar (Levene p ≥ 0.05).'
-      const insight = `Mean ${getVar(outcomeName)?.label ?? outcomeName} is ${m1.toFixed(2)} (${g1}) vs ${m2.toFixed(2)} (${g2}). ${p < 0.05 ? 'The difference is statistically significant (p < 0.05).' : 'The difference is not statistically significant (p ≥ 0.05).'}${leveneNote}`
+      const insight = `Mean "${outcomeLabel}" by "${groupLabel}": ${m1.toFixed(2)} (${g1}) vs ${m2.toFixed(2)} (${g2}). ${p < 0.05 ? 'The difference is statistically significant (p < 0.05).' : 'The difference is not statistically significant (p ≥ 0.05).'}${leveneNote}`
+      const diff = m2 - m1
+      const plainLanguage =
+        p < 0.05
+          ? `In practice: "${String(g2)}" scores about ${Math.abs(diff).toFixed(2)} points ${diff > 0 ? 'higher' : 'lower'} on average than "${String(g1)}" for "${outcomeLabel}".`
+          : `In practice: we don't see a statistically significant difference in "${outcomeLabel}" between "${String(g1)}" and "${String(g2)}" in this sample.`
+      const nextStep = p < 0.05
+        ? 'Next step: report the group means and SDs and the t-test result; use the table for exact values.'
+        : 'Next step: you can report "no significant difference"; consider confidence interval for the mean difference or a larger sample.'
       return {
         testId,
         testName: 'Independent Samples T-Test',
@@ -763,9 +839,11 @@ export function runTest(
         chart,
         insight,
         keyStat: `t = ${t.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
         variablesAnalyzed: [
-          { label: getVar(outcomeName)?.label ?? outcomeName, role: 'outcome' },
-          { label: getVar(groupName)?.label ?? groupName, role: 'group' },
+          { label: outcomeLabel, role: 'outcome' },
+          { label: groupLabel, role: 'group' },
         ],
       }
     }
@@ -856,8 +934,17 @@ export function runTest(
         xKey: 'name',
         yKey: 'mean',
       }
+      const outcomeLabel = getVar(outcomeName)?.label ?? outcomeName
+      const groupLabel = getVar(groupName)?.label ?? groupName
       const leveneNote = leveneP < 0.05 ? ' Variances differ (Levene p < 0.05); consider Welch ANOVA or robust methods.' : ''
-      const insight = `One-way ANOVA: F(${df1}, ${df2}) = ${F.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'At least one group mean differs significantly. Post-hoc (Tukey HSD) above.' : 'No significant difference between group means.'}${leveneNote}`
+      const insight = `Mean "${outcomeLabel}" by "${groupLabel}" (${k} groups): F(${df1}, ${df2}) = ${F.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'At least one group mean differs significantly. Post-hoc (Tukey HSD) above.' : 'No significant difference between group means.'}${leveneNote}`
+      const plainLanguage =
+        p < 0.05
+          ? `In practice: at least one group differs in average "${outcomeLabel}"; use the Tukey rows in the table to see which pairs differ.`
+          : `In practice: we don't see statistically significant differences in "${outcomeLabel}" across the "${groupLabel}" groups in this sample.`
+      const nextStep = p < 0.05
+        ? 'Next step: report F and p, then use the post-hoc table to describe which groups differ; report means and SDs per group.'
+        : 'Next step: you can report "no significant difference between groups"; consider power or effect size if the sample is small.'
       return {
         testId,
         testName: 'One-way ANOVA',
@@ -865,9 +952,11 @@ export function runTest(
         chart,
         insight,
         keyStat: `F = ${F.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
         variablesAnalyzed: [
-          { label: getVar(outcomeName)?.label ?? outcomeName, role: 'outcome' },
-          { label: getVar(groupName)?.label ?? groupName, role: 'group' },
+          { label: outcomeLabel, role: 'outcome' },
+          { label: groupLabel, role: 'group' },
         ],
       }
     }
@@ -959,7 +1048,16 @@ export function runTest(
         xKey: 'observed',
         yKey: 'fitted',
       }
-      const insight = `Linear regression: R² = ${rSq.toFixed(3)}. Model F(${k}, ${n - k - 1}) = ${F.toFixed(2)}, p ${pF < 0.05 ? '<' : '≥'} 0.05. ${pF < 0.05 ? 'At least one predictor is significant.' : 'Model is not statistically significant at α = 0.05.'}`
+      const outcomeLabel = getVarLabel(outcomeName)
+      const predictorLabels = predictorNames.map(getVarLabel).join(', ')
+      const insight = `Linear regression: predicting "${outcomeLabel}" from ${predictorLabels}. R² = ${rSq.toFixed(3)}. Model F(${k}, ${n - k - 1}) = ${F.toFixed(2)}, p ${pF < 0.05 ? '<' : '≥'} 0.05. ${pF < 0.05 ? 'At least one predictor is significant.' : 'Model is not statistically significant at α = 0.05.'}`
+      const plainLanguage =
+        pF < 0.05
+          ? `In practice: the predictors explain about ${Math.round(rSq * 100)}% of the variance in "${outcomeLabel}"; see the table for which predictors matter most.`
+          : `In practice: we don't see a statistically significant linear model for "${outcomeLabel}" with these predictors in this sample.`
+      const nextStep = pF < 0.05
+        ? 'Next step: report R² and p; use the coefficients table to describe which predictors are significant; check residuals for linearity.'
+        : 'Next step: you can report "model not significant"; consider different predictors, transformations, or a larger sample.'
       return {
         testId: 'linreg',
         testName: 'Linear regression',
@@ -967,6 +1065,12 @@ export function runTest(
         chart,
         insight,
         keyStat: `R² = ${rSq.toFixed(3)}, p ${pF < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: [
+          { label: outcomeLabel, role: 'outcome' },
+          ...predictorNames.map((name) => ({ label: getVarLabel(name), role: 'predictor' as const })),
+        ],
       }
     }
 
@@ -1065,13 +1169,24 @@ export function runTest(
           'p (approx)': se[j] ? (pVal < 0.001 ? '< 0.001' : Math.round(pVal * 1000) / 1000) : '—',
         }
       })
-      const insight = `Logistic regression: ${table.length - 1} predictor(s). Odds ratios and Wald tests above. Check events per predictor (e.g. ≥10) for stability.`
+      const outcomeLabel = variablesMeta.find((v) => v.name === outcomeName)?.label ?? outcomeName
+      const predictorLabels = predictorNames.map((name) => variablesMeta.find((v) => v.name === name)?.label ?? name).join(', ')
+      const nEvents = (y as number[]).reduce((a, b) => a + b, 0)
+      const insight = `Logistic regression: predicting "${outcomeLabel}" from ${predictorLabels}. ${table.length - 1} predictor(s). Odds ratios and Wald tests above. Check events per predictor (e.g. ≥10) for stability.`
+      const plainLanguage = `In practice: the model estimates how each predictor relates to the probability of "${outcomeLabel}"; odds ratios above 1 mean higher probability with higher predictor (or that category).`
+      const nextStep = 'Next step: report N and events; report odds ratios and p for each predictor; ensure you have enough events per predictor (e.g. ≥10) for stable estimates.'
       return {
         testId: 'logreg',
         testName: 'Logistic regression',
         table,
         insight,
-        keyStat: `N = ${n}, events = ${(y as number[]).reduce((a, b) => a + b, 0)}`,
+        keyStat: `N = ${n}, events = ${nEvents}`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: [
+          { label: outcomeLabel, role: 'outcome' },
+          ...predictorNames.map((name) => ({ label: variablesMeta.find((v) => v.name === name)?.label ?? name, role: 'predictor' as const })),
+        ],
       }
     }
 
@@ -1127,8 +1242,30 @@ export function runTest(
           xKey: 'name',
           yKey: 'median',
         }
-        const insight = `Mann-Whitney U = ${U}, z ≈ ${z.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'The two groups differ significantly in distribution.' : 'No significant difference.'}`
-        return { testId: 'mann', testName: 'Mann-Whitney U', table, chart, insight, keyStat: `U = ${U}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}` }
+        const outcomeLabel = getVarLabel(outcomeName)
+        const groupLabel = getVarLabel(groupName)
+        const insight = `Mann-Whitney U for "${outcomeLabel}" by "${groupLabel}": U = ${U}, z ≈ ${z.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'The two groups differ significantly in distribution.' : 'No significant difference.'}`
+        const plainLanguage =
+          p < 0.05
+            ? `In practice: "${String(groupVals[1])}" tends to have higher (or lower) ranks than "${String(groupVals[0])}" for "${outcomeLabel}".`
+            : `In practice: we don't see a significant difference in the distribution of "${outcomeLabel}" between the two groups.`
+        const nextStep = p < 0.05
+          ? 'Next step: report U and p; use medians from the chart or table to describe the groups.'
+          : 'Next step: you can report "no significant difference"; consider reporting rank sums or medians.'
+        return {
+          testId: 'mann',
+          testName: 'Mann-Whitney U',
+          table,
+          chart,
+          insight,
+          keyStat: `U = ${U}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+          plainLanguage,
+          nextStep,
+          variablesAnalyzed: [
+            { label: outcomeLabel, role: 'outcome' },
+            { label: groupLabel, role: 'group' },
+          ],
+        }
       }
       const k = groupVals.length
       const N = allVals.length
@@ -1169,8 +1306,30 @@ export function runTest(
         xKey: 'name',
         yKey: 'median',
       }
-      const insight = `Kruskal-Wallis H = ${H.toFixed(2)}, df = ${dfKw}, p ${pKw < 0.05 ? '<' : '≥'} 0.05. ${pKw < 0.05 ? 'At least one group differs in distribution.' : 'No significant difference.'}`
-      return { testId: 'mann', testName: 'Kruskal-Wallis', table, chart, insight, keyStat: `H = ${H.toFixed(2)}, p ${pKw < 0.05 ? '< 0.05' : '≥ 0.05'}` }
+      const outcomeLabel = getVarLabel(outcomeName)
+      const groupLabel = getVarLabel(groupName)
+      const insight = `Kruskal-Wallis for "${outcomeLabel}" by "${groupLabel}" (${k} groups): H = ${H.toFixed(2)}, df = ${dfKw}, p ${pKw < 0.05 ? '<' : '≥'} 0.05. ${pKw < 0.05 ? 'At least one group differs in distribution.' : 'No significant difference.'}`
+      const plainLanguage =
+        pKw < 0.05
+          ? `In practice: at least one group differs in the distribution of "${outcomeLabel}"; compare medians or rank sums in the table.`
+          : `In practice: we don't see a significant difference in "${outcomeLabel}" across the "${groupLabel}" groups.`
+      const nextStep = pKw < 0.05
+        ? 'Next step: report H and p; use the table to describe which groups have higher/lower ranks or medians.'
+        : 'Next step: you can report "no significant difference"; consider reporting medians per group.'
+      return {
+        testId: 'mann',
+        testName: 'Kruskal-Wallis',
+        table,
+        chart,
+        insight,
+        keyStat: `H = ${H.toFixed(2)}, p ${pKw < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: [
+          { label: outcomeLabel, role: 'outcome' },
+          { label: groupLabel, role: 'group' },
+        ],
+      }
     }
 
     case 'paired': {
@@ -1217,7 +1376,16 @@ export function runTest(
         xKey: 'x',
         yKey: 'y',
       }
-      const insight = `Paired t-test: mean difference = ${meanDiff.toFixed(3)}, t(${dfPaired}) = ${t.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'The difference is statistically significant.' : 'No significant difference.'}`
+      const v1Label = getVarLabel(v1)
+      const v2Label = getVarLabel(v2)
+      const insight = `Paired t-test: "${v1Label}" vs "${v2Label}". Mean difference = ${meanDiff.toFixed(3)}, t(${dfPaired}) = ${t.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'The difference is statistically significant.' : 'No significant difference.'}`
+      const plainLanguage =
+        p < 0.05
+          ? `In practice: on average, "${v2Label}" is about ${Math.abs(meanDiff).toFixed(2)} points ${meanDiff > 0 ? 'higher' : 'lower'} than "${v1Label}" in your sample.`
+          : `In practice: we don't see a statistically significant average change from "${v1Label}" to "${v2Label}" in this sample.`
+      const nextStep = p < 0.05
+        ? 'Next step: report mean difference, t, and p; report SD of differences and N.'
+        : 'Next step: you can report "no significant change"; consider confidence interval for the mean difference.'
       return {
         testId: 'paired',
         testName: 'Paired t-test',
@@ -1225,6 +1393,12 @@ export function runTest(
         chart,
         insight,
         keyStat: `t = ${t.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: [
+          { label: v1Label, role: 'measure 1' },
+          { label: v2Label, role: 'measure 2' },
+        ],
       }
     }
 
@@ -1280,7 +1454,13 @@ export function runTest(
         yKey: 'value',
       }
       const cum80 = eigenvalues.findIndex((_, i) => eigenvalues.slice(0, i + 1).reduce((a, b) => a + b, 0) / totalVar >= 0.8)
-      const pcaInsight = `PCA on ${p} variables, N = ${n}. Total variance = ${totalVar.toFixed(2)}. ${cum80 >= 0 ? `First ${cum80 + 1} component(s) explain ≥80% of variance.` : 'Consider retaining components with eigenvalue > 1 or using scree plot.'}`
+      const varLabels = varNames.map((name) => getVar(name)?.label ?? name).join(', ')
+      const pcaInsight = `PCA on ${p} variables (${varLabels}), N = ${n}. Total variance = ${totalVar.toFixed(2)}. ${cum80 >= 0 ? `First ${cum80 + 1} component(s) explain ≥80% of variance.` : 'Consider retaining components with eigenvalue > 1 or using scree plot.'}`
+      const plainLanguage =
+        cum80 >= 0
+          ? `In practice: the first ${cum80 + 1} component(s) capture most of the variance in "${varLabels}"; you can use them for dimension reduction or construct validation.`
+          : 'In practice: variance is spread across components; consider eigenvalue > 1 or a scree plot to choose how many components to keep.'
+      const nextStep = 'Next step: report eigenvalues and % variance; use component loadings (if available) to interpret components; consider rotation for interpretability.'
       return {
         testId: 'pca',
         testName: 'Principal component analysis',
@@ -1288,6 +1468,9 @@ export function runTest(
         chart,
         insight: pcaInsight,
         keyStat: `${p} components, ${totalVar.toFixed(2)} total variance`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: varNames.map((name) => ({ label: getVar(name)?.label ?? name, role: 'variable' })),
       }
     }
 

@@ -24,7 +24,7 @@ describe('TestSuggester', () => {
   it('renders test cards', () => {
     const dataset = makeDataset()
     render(<TestSuggester dataset={dataset} />)
-    expect(screen.getByText(/Smart Test Suggester/)).toBeInTheDocument()
+    expect(screen.getByText(/Recommended Tests/)).toBeInTheDocument()
     const runButtons = screen.getAllByRole('button', { name: /Run this test/i })
     expect(runButtons.length).toBeGreaterThan(0)
   })

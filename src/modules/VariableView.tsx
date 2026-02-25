@@ -9,6 +9,7 @@ import type {
   QuestionGroupType,
 } from '../types'
 import { parseCSV } from '../lib/csvParse'
+import { styles, theme } from '../theme'
 
 const MEASUREMENT_LEVELS: { value: MeasurementLevel; label: string }[] = [
   { value: 'nominal', label: 'Nominal' },
@@ -48,7 +49,7 @@ const QUESTION_GROUP_TYPES: { value: QuestionGroupType; label: string }[] = [
 
 function ColHeader({ title, help }: { title: string; help?: string }) {
   return (
-    <th style={thStyle} title={help}>
+    <th style={{ ...styles.tableHeader, paddingRight: 10 }} title={help}>
       {title}
       {help && <span style={{ marginLeft: 4, opacity: 0.7, fontWeight: 'normal' }} title={help}>ⓘ</span>}
     </th>
@@ -67,6 +68,7 @@ function nextGroupId() {
 export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [summaryAck, setSummaryAck] = useState(false)
+  const [uploadHover, setUploadHover] = useState(false)
 
   const questionGroups: QuestionGroup[] = dataset?.questionGroups ?? []
 
@@ -190,12 +192,37 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
   if (!dataset) {
     return (
       <section>
-        <h2>Variable View — Smart Data Reader</h2>
-        <p>Upload a CSV file to parse and configure variables (measurement level, labels, missing values).</p>
-        <label style={{ display: 'inline-block', marginTop: 8 }}>
-          <input type="file" accept=".csv" onChange={handleFile} />
-        </label>
-        {error && <p style={{ color: '#c0392b', marginTop: 8 }}>{error}</p>}
+        <header style={styles.sectionHeader}>
+          <h2 style={styles.textSection}>
+            Data Source<sup style={styles.sup}>1</sup>
+          </h2>
+        </header>
+        <div
+          style={{
+            ...styles.uploadZone,
+            ...(uploadHover ? styles.uploadZoneHover : {}),
+          }}
+          onMouseEnter={() => setUploadHover(true)}
+          onMouseLeave={() => setUploadHover(false)}
+          onClick={() => document.getElementById('variableViewFileInput')?.click()}
+        >
+          <div style={styles.uploadIcon}>+</div>
+          <div style={styles.textLabel}>Upload CSV Dataset</div>
+          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 8 }}>
+            Drag & drop or click
+          </div>
+          <input
+            type="file"
+            id="variableViewFileInput"
+            accept=".csv"
+            onChange={handleFile}
+            style={{ display: 'none' }}
+          />
+        </div>
+        <div style={{ marginTop: 16, fontSize: 11, opacity: 0.6, lineHeight: 1.4 }}>
+          Supported: .csv · Max size: 25MB
+        </div>
+        {error && <p style={{ color: '#c0392b', marginTop: 12, fontSize: 13 }}>{error}</p>}
       </section>
     )
   }
@@ -208,19 +235,23 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
 
   return (
     <section>
-      <h2>Variable View</h2>
-      <p>
+      <header style={styles.sectionHeader}>
+        <h2 style={styles.textSection}>
+          Data Source<sup style={styles.sup}>1</sup>
+        </h2>
+      </header>
+      <p style={{ ...styles.textBody, marginBottom: 16 }}>
         <strong>{dataset.variables.length} variables</strong> — {nominal} Nominal, {ordinal} Ordinal, {scale} Scale.
         {excluded > 0 && (
-          <span style={{ marginLeft: 8, color: '#7f8c8d' }}>
+          <span style={{ marginLeft: 8, opacity: 0.6 }}>
             {included} included in analysis, {excluded} excluded (uncheck &quot;In analysis&quot; to exclude).
           </span>
         )}
       </p>
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
-        <table style={{ borderCollapse: 'collapse', minWidth: 860 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860, fontSize: 13 }}>
           <thead>
-            <tr style={{ background: '#ecf0f1', textAlign: 'left' }}>
+            <tr style={{ textAlign: 'left' }}>
               <ColHeader title="Name" help="Column name (e.g. Q1_age). Like SPSS Variable Name." />
               <ColHeader title="Type" help="How the value is stored: String, Numeric, Date, Yes/No." />
               <ColHeader title="Label" help="Human-readable description. Like SPSS Variable Label." />
@@ -236,12 +267,11 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
               <tr
                 key={v.name}
                 style={{
-                  borderBottom: '1px solid #ddd',
-                  background: v.includeInAnalysis === false ? '#f8f9fa' : undefined,
+                  background: v.includeInAnalysis === false ? theme.colors.background : undefined,
                   opacity: v.includeInAnalysis === false ? 0.85 : 1,
                 }}
               >
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <input
                     value={v.name}
                     onChange={(e) => updateVariable(i, { name: e.target.value })}
@@ -249,7 +279,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     placeholder="Name"
                   />
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <select
                     value={v.variableType}
                     onChange={(e) => updateVariable(i, { variableType: e.target.value as VariableType })}
@@ -263,7 +293,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     ))}
                   </select>
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <input
                     value={v.label}
                     onChange={(e) => updateVariable(i, { label: e.target.value })}
@@ -271,7 +301,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     placeholder="Label"
                   />
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <select
                     value={v.measurementLevel}
                     onChange={(e) => updateVariable(i, { measurementLevel: e.target.value as MeasurementLevel })}
@@ -285,7 +315,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     ))}
                   </select>
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <select
                     value={v.role}
                     onChange={(e) => updateVariable(i, { role: e.target.value as VariableRole })}
@@ -298,7 +328,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     ))}
                   </select>
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   {v.missingPct > 0 ? (
                     <span style={v.missingPct > 30 ? { color: '#c0392b', fontWeight: 'bold' } : undefined}>
                       {v.missingPct}%
@@ -307,7 +337,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     '—'
                   )}
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <select
                     value={getGroupIdForVariable(v.name)}
                     onChange={(e) => assignVariableToGroup(v.name, e.target.value)}
@@ -322,7 +352,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     <option value="__new__">+ New group…</option>
                   </select>
                 </td>
-                <td style={tdStyle}>
+                <td style={styles.tableCell}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                     <input
                       type="checkbox"
@@ -340,23 +370,14 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <h3 style={{ marginBottom: 8, fontSize: '1rem' }}>Question groups</h3>
-        <p style={{ margin: '0 0 10px', fontSize: 14, color: '#555' }}>
+        <h3 style={{ ...styles.textLabel, marginBottom: 8, opacity: 0.6 }}>Question groups</h3>
+        <p style={{ ...styles.textBody, margin: '0 0 10px' }}>
           Group columns that belong to the same question (e.g. checkbox set, matrix rows, ranking items). Assign variables above with the &quot;Question group&quot; dropdown.
         </p>
         <button
           type="button"
           onClick={addQuestionGroup}
-          style={{
-            marginBottom: 12,
-            padding: '0.35rem 0.75rem',
-            background: '#3498db',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            fontSize: 14,
-          }}
+          style={{ ...styles.btn, ...styles.btnPrimary, marginTop: 0, marginBottom: 12 }}
         >
           Add question group
         </button>
@@ -459,25 +480,15 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         <button
           type="button"
           onClick={confirmVariableView}
-          style={{
-            padding: '0.5rem 1rem',
-            background: '#27ae60',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
+          style={{ ...styles.btn, background: theme.colors.text, color: '#FFFFFF', border: `1px solid ${theme.colors.text}`, marginTop: 0 }}
         >
-          Confirm variable view & continue
+          Process Data
         </button>
         {dataset.variableViewConfirmed && summaryAck && (
-          <span style={{ color: '#27ae60' }}>✅ Variable view confirmed. Use Test Suggester or Insights.</span>
+          <span style={{ ...styles.textBody, opacity: 0.7 }}>✅ Variable view confirmed. Use Test Suggester or Insights.</span>
         )}
       </div>
     </section>
   )
 }
 
-const thStyle: React.CSSProperties = { padding: '8px 10px', border: '1px solid #ddd' }
-const tdStyle: React.CSSProperties = { padding: '6px 10px', border: '1px solid #ddd' }

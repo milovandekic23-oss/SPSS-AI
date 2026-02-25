@@ -13,8 +13,9 @@ import {
 } from 'recharts'
 import type { TestResult } from '../lib/statsRunner'
 import { validateTestResult } from '../lib/resultValidator'
+import { styles, theme } from '../theme'
 
-const CHART_COLORS = ['#3498db', '#2ecc71', '#e74c3c', '#9b59b6', '#f39c12']
+const CHART_COLORS = [theme.colors.accent, '#2ecc71', '#e74c3c', '#9b59b6', '#f39c12']
 
 interface TestResultPanelProps {
   result: TestResult
@@ -22,7 +23,7 @@ interface TestResultPanelProps {
 }
 
 export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
-  const { testName, table, chart, insight, keyStat, variablesAnalyzed } = result
+  const { testName, table, chart, insight, keyStat, variablesAnalyzed, plainLanguage, nextStep } = result
   const safeTable = Array.isArray(table) ? table : []
   const tableHeaders = safeTable.length > 0 ? Object.keys(safeTable[0]) : []
   const safeChart = chart && Array.isArray(chart.data) && chart.data.length > 0 ? chart : null
@@ -34,26 +35,20 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
     <div
       style={{
         marginTop: 24,
-        padding: 20,
-        background: '#fff',
-        border: '1px solid #bdc3c7',
-        borderRadius: 12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        ...styles.chartContainer,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>📊 {testName}</h3>
+        <h3 style={{ margin: 0, ...styles.suggestionTitle, fontSize: 18 }}>📊 {testName}</h3>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
             style={{
-              background: 'transparent',
-              border: '1px solid #bdc3c7',
-              borderRadius: 4,
-              padding: '4px 10px',
-              cursor: 'pointer',
-              fontSize: 14,
+              ...styles.btn,
+              marginTop: 0,
+              padding: '8px 16px',
+              fontSize: 12,
             }}
           >
             Close
@@ -63,8 +58,8 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
 
       {variablesAnalyzed && variablesAnalyzed.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <strong style={{ fontSize: 13, color: '#2c3e50' }}>Questions analyzed:</strong>
-          <ul style={{ margin: '6px 0 0 20px', padding: 0, fontSize: 14, color: '#34495e' }}>
+          <strong style={styles.textLabel}>Questions analyzed:</strong>
+          <ul style={{ margin: '6px 0 0 20px', padding: 0, ...styles.textBody }}>
             {variablesAnalyzed.map((v, i) => (
               <li key={i} style={{ marginBottom: 4 }}>
                 {v.label}
@@ -76,7 +71,7 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
       )}
 
       {keyStat && (
-        <p style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600, color: '#2c3e50' }}>
+        <p style={{ margin: '0 0 12px', ...styles.textBody, fontWeight: 600 }}>
           Key result: {keyStat}
         </p>
       )}
@@ -85,13 +80,23 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
         style={{
           marginBottom: 16,
           padding: 14,
-          background: '#f8f9fa',
-          borderLeft: '4px solid #3498db',
+          background: theme.colors.background,
+          borderLeft: `4px solid ${theme.colors.accent}`,
           borderRadius: 4,
         }}
       >
-        <strong style={{ fontSize: 13, color: '#2c3e50' }}>💡 What this result means</strong>
-        <p style={{ margin: '8px 0 0', lineHeight: 1.5, color: '#34495e', fontSize: 14 }}>{insight}</p>
+        <strong style={styles.textLabel}>💡 What this result means</strong>
+        <p style={{ margin: '8px 0 0', ...styles.textBody }}>{insight}</p>
+        {plainLanguage && (
+          <p style={{ margin: '10px 0 0', lineHeight: 1.5, color: '#2c3e50', fontSize: 14, fontStyle: 'italic' }}>
+            {plainLanguage}
+          </p>
+        )}
+        {nextStep && (
+          <p style={{ margin: '8px 0 0', lineHeight: 1.5, color: '#27ae60', fontSize: 13, fontWeight: 500 }}>
+            {nextStep}
+          </p>
+        )}
       </div>
 
       <div style={{ fontSize: 12, marginBottom: 16 }} data-testid="result-supervisor">
@@ -105,11 +110,11 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
 
       {safeTable.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 20 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 14 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
             <thead>
-              <tr style={{ background: '#ecf0f1', textAlign: 'left' }}>
+              <tr style={{ textAlign: 'left' }}>
                 {tableHeaders.map((h) => (
-                  <th key={h} style={{ padding: '8px 10px', border: '1px solid #ddd' }}>
+                  <th key={h} style={styles.tableHeader}>
                     {h}
                   </th>
                 ))}
@@ -117,9 +122,9 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
             </thead>
             <tbody>
               {safeTable.map((row, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                <tr key={i}>
                   {tableHeaders.map((h) => (
-                    <td key={h} style={{ padding: '6px 10px', border: '1px solid #ddd' }}>
+                    <td key={h} style={styles.tableCell}>
                       {String(row[h] ?? '—')}
                     </td>
                   ))}

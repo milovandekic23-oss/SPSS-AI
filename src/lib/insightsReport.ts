@@ -94,8 +94,9 @@ export function runInsightsReport(dataset: DatasetState): InsightsReport {
   return { findings, keyHeadlines }
 }
 
-/** One-line headline for a result (for key findings list and expandable summary). */
+/** One-line headline for a result (for key findings list and expandable summary). Prefer context + takeaway. */
 export function getHeadline(result: TestResult): string {
+  if (result.plainLanguage) return result.plainLanguage.replace(/^In practice:\s*/i, '').trim()
   if (result.keyStat) return `${result.testName}: ${result.keyStat}`
   const firstSentence = result.insight.split(/[.!?]/)[0]?.trim()
   if (firstSentence) return firstSentence + (result.insight.includes('.') ? '.' : '')
