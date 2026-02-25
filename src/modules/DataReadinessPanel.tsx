@@ -49,6 +49,22 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
     onDatasetChange(next)
   }
 
+  const handleExcludeAllCriticalMissing = () => {
+    if (!result || !dataset || !onDatasetChange) return
+    const criticalMissingVars = result.items
+      .filter((it) => it.category === 'missing' && it.severity === 'critical' && it.variable)
+      .map((it) => it.variable!)
+    if (criticalMissingVars.length === 0) return
+    const set = new Set(criticalMissingVars)
+    const next = {
+      ...dataset,
+      variables: dataset.variables.map((v) =>
+        set.has(v.name) ? { ...v, includeInAnalysis: false } : v
+      ),
+    }
+    onDatasetChange(next)
+  }
+
   const handleRemoveDuplicates = () => {
     if (!dataset || !onDatasetChange) return
     const uniqueRows = removeDuplicateRows(dataset.rows)
@@ -133,6 +149,38 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
 
       {detailsOpen && (
         <>
+          {result.items.some((it) => it.category === 'missing' && it.severity === 'critical' && it.variable) && onDatasetChange && (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: '10px 14px',
+                background: '#e8f4fd',
+                border: `1px solid ${theme.colors.accent}`,
+                borderRadius: 6,
+                fontSize: 13,
+              }}
+            >
+              <strong>Recommended action:</strong> Exclude all variables with critical missing % from analysis so you can run tests.
+              <button
+                type="button"
+                onClick={handleExcludeAllCriticalMissing}
+                style={{
+                  marginLeft: 10,
+                  marginTop: 6,
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  background: theme.colors.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontWeight: 600,
+                }}
+              >
+                Exclude all critical
+              </button>
+            </div>
+          )}
           <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 16px', fontSize: 13 }}>
             {result.items.map((item) => {
               const sev = SEVERITY_STYLE[item.severity]
@@ -154,24 +202,43 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
                     </div>
                   )}
                   {item.variable && item.category === 'missing' && onDatasetChange && (
-                    <button type="button" onClick={() => handleExcludeFromAnalysis(item.variable!)} style={btn}>
-                      Exclude from analysis
-                    </button>
+                    <div style={{ marginTop: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: theme.colors.accent }}>Recommended: </span>
+                      <button type="button" onClick={() => handleExcludeFromAnalysis(item.variable!)} style={btnPrimary}>
+                        Exclude from analysis
+                      </button>
+                      {onOpenVariableView && (
+                        <button type="button" onClick={onOpenVariableView} style={btn}>
+                          Or fix in Variable View
+                        </button>
+                      )}
+                    </div>
                   )}
                   {item.id === 'duplicate-rows' && onDatasetChange && (
-                    <button type="button" onClick={handleRemoveDuplicates} style={btnPrimary}>
-                      Remove duplicate rows
-                    </button>
+                    <div style={{ marginTop: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: theme.colors.accent }}>Recommended: </span>
+                      <button type="button" onClick={handleRemoveDuplicates} style={btnPrimary}>
+                        Remove duplicate rows
+                      </button>
+                    </div>
                   )}
                   {item.category === 'outliers' && item.variable && onDatasetChange && (
-                    <span style={{ display: 'inline-block', marginTop: 6 }}>
+                    <div style={{ marginTop: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: theme.colors.accent }}>Recommended: </span>
                       <button type="button" onClick={() => handleWinsorize(item.variable!)} style={btnPrimary}>
-                        Winsorize (recommended)
+                        Winsorize
                       </button>
                       <button type="button" onClick={() => handleRemoveOutliers(item.variable!)} style={btn}>
-                        Remove outlier rows
+                        Or remove outlier rows
                       </button>
-                    </span>
+                    </div>
+                  )}
+                  {onOpenVariableView && !item.variable && item.category !== 'outliers' && item.id !== 'duplicate-rows' && (
+                    <div style={{ marginTop: 8 }}>
+                      <button type="button" onClick={onOpenVariableView} style={btn}>
+                        Go to Variable View to fix
+                      </button>
+                    </div>
                   )}
                 </li>
               )
