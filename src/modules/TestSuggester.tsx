@@ -100,7 +100,7 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
 function TestCard({
   name,
   forLevels,
-  id,
+  id: _id,
   onRun,
   running,
 }: {

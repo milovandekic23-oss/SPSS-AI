@@ -2,7 +2,7 @@ import Papa from 'papaparse'
 import type { VariableMeta, DataRow, MeasurementLevel, VariableType } from '../types'
 
 function inferMeasurementLevel(
-  name: string,
+  _name: string,
   values: (string | number | null)[],
   uniqueCount: number
 ): MeasurementLevel {
@@ -65,7 +65,7 @@ export function parseCSV(csvText: string): { variables: VariableMeta[]; rows: Da
 
   const variables: VariableMeta[] = headers.map((name, j) => {
     const values = colValues[j]
-    const nonMissing = values.filter((v) => v != null && v !== '')
+    const nonMissing = values.filter((v): v is string | number => v != null && v !== '')
     const missingPct = values.length ? ((values.length - nonMissing.length) / values.length) * 100 : 0
     const uniqueCount = new Set(nonMissing).size
     const measurementLevel = inferMeasurementLevel(name, values, uniqueCount)
