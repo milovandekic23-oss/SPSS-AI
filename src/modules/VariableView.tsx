@@ -47,11 +47,23 @@ const QUESTION_GROUP_TYPES: { value: QuestionGroupType; label: string }[] = [
   { value: 'group', label: 'Group (other)' },
 ]
 
-function ColHeader({ title, help }: { title: string; help?: string }) {
+const COLUMN_TOOLTIPS: Record<string, string> = {
+  Name: 'Variable name from your file. Read-only; use Label for the display name used in reports.',
+  Type: 'How the value is stored: String, Numeric (integer/decimal), Date, or Yes/No.',
+  Label: 'Human-readable description (e.g. question text). Used in reports and test suggestions.',
+  Measure: 'Nominal = categories, no order. Ordinal = ordered categories. Scale = numeric, continuous.',
+  Role: 'Input, Target, or ID. Used by some analyses to pick outcome vs predictor.',
+  'Missing %': 'Share of empty or missing values. High missingness may affect analyses.',
+  'Question group': 'Group columns that belong to one question (e.g. checkbox set, matrix).',
+  'In analysis': 'Uncheck to exclude this variable from test suggestions and analyses.',
+}
+
+function ColHeader({ title }: { title: string }) {
+  const tooltip = COLUMN_TOOLTIPS[title]
   return (
-    <th style={{ ...styles.tableHeader, paddingRight: 10 }} title={help}>
+    <th style={{ ...styles.tableHeader, paddingRight: 10 }} title={tooltip}>
       {title}
-      {help && <span style={{ marginLeft: 4, opacity: 0.7, fontWeight: 'normal' }} title={help}>ⓘ</span>}
+      {tooltip && <span style={{ marginLeft: 4, opacity: 0.7, fontWeight: 'normal' }} title={tooltip}>ⓘ</span>}
     </th>
   )
 }
@@ -240,11 +252,11 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
           Data Source<sup style={styles.sup}>1</sup>
         </h2>
       </header>
-      <p style={{ ...styles.textBody, marginBottom: 16 }}>
+      <p style={{ ...styles.textBody, marginBottom: 16 }} title="Summary of variable types and how many are included in analyses.">
         <strong>{dataset.variables.length} variables</strong> — {nominal} Nominal, {ordinal} Ordinal, {scale} Scale.
         {excluded > 0 && (
           <span style={{ marginLeft: 8, opacity: 0.6 }}>
-            {included} included in analysis, {excluded} excluded (uncheck &quot;In analysis&quot; to exclude).
+            {included} in analysis, {excluded} excluded.
           </span>
         )}
       </p>
@@ -252,14 +264,14 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860, fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: 'left' }}>
-              <ColHeader title="Name" help="Column name (e.g. Q1_age). Like SPSS Variable Name." />
-              <ColHeader title="Type" help="How the value is stored: String, Numeric, Date, Yes/No." />
-              <ColHeader title="Label" help="Human-readable description. Like SPSS Variable Label." />
-              <ColHeader title="Measure" help="Nominal = categories, no order. Ordinal = ordered categories. Scale = numeric, continuous. Like SPSS Measure." />
-              <ColHeader title="Role" help="Input, Target, or ID. Used by some analyses. Like SPSS Role." />
-              <ColHeader title="Missing %" help="Share of empty or missing values in this column." />
-              <ColHeader title="Question group" help="Group columns that belong to one question (e.g. checkbox set, matrix)." />
-              <ColHeader title="In analysis" help="Uncheck to exclude this variable from test suggestions and analyses (like hiding in SPSS)." />
+              <ColHeader title="Name" />
+              <ColHeader title="Type" />
+              <ColHeader title="Label" />
+              <ColHeader title="Measure" />
+              <ColHeader title="Role" />
+              <ColHeader title="Missing %" />
+              <ColHeader title="Question group" />
+              <ColHeader title="In analysis" />
             </tr>
           </thead>
           <tbody>
@@ -271,15 +283,10 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                   opacity: v.includeInAnalysis === false ? 0.85 : 1,
                 }}
               >
-                <td style={styles.tableCell}>
-                  <input
-                    value={v.name}
-                    onChange={(e) => updateVariable(i, { name: e.target.value })}
-                    style={{ width: '100%', maxWidth: 120 }}
-                    placeholder="Name"
-                  />
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS.Name}>
+                  <span style={{ display: 'block', fontFamily: "'Courier New', monospace", fontSize: 12 }}>{v.name}</span>
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS.Type}>
                   <select
                     value={v.variableType}
                     onChange={(e) => updateVariable(i, { variableType: e.target.value as VariableType })}
@@ -293,15 +300,16 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     ))}
                   </select>
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS.Label}>
                   <input
                     value={v.label}
                     onChange={(e) => updateVariable(i, { label: e.target.value })}
-                    style={{ width: '100%', maxWidth: 160 }}
+                    style={{ width: '100%', maxWidth: 200 }}
                     placeholder="Label"
+                    title="Edit the display name or question text shown in reports"
                   />
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS.Measure}>
                   <select
                     value={v.measurementLevel}
                     onChange={(e) => updateVariable(i, { measurementLevel: e.target.value as MeasurementLevel })}
@@ -315,11 +323,12 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     ))}
                   </select>
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS.Role}>
                   <select
                     value={v.role}
                     onChange={(e) => updateVariable(i, { role: e.target.value as VariableRole })}
                     style={{ minWidth: 80 }}
+                    title="Input, Target, or ID — used by some analyses"
                   >
                     {ROLES.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -328,7 +337,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     ))}
                   </select>
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Missing %']}>
                   {v.missingPct > 0 ? (
                     <span style={v.missingPct > 30 ? { color: '#c0392b', fontWeight: 'bold' } : undefined}>
                       {v.missingPct}%
@@ -337,11 +346,12 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     '—'
                   )}
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Question group']}>
                   <select
                     value={getGroupIdForVariable(v.name)}
                     onChange={(e) => assignVariableToGroup(v.name, e.target.value)}
                     style={{ minWidth: 110 }}
+                    title="Assign to a question group (e.g. checkbox set)"
                   >
                     <option value="">— None</option>
                     {questionGroups.map((g) => (
@@ -352,7 +362,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     <option value="__new__">+ New group…</option>
                   </select>
                 </td>
-                <td style={styles.tableCell}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['In analysis']}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                     <input
                       type="checkbox"
@@ -369,20 +379,21 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         </table>
       </div>
 
-      <div style={{ marginTop: 24 }}>
+      <div style={{ marginTop: 24 }} title="Group columns that belong to one question (e.g. checkbox set, matrix). Assign in the table above.">
         <h3 style={{ ...styles.textLabel, marginBottom: 8, opacity: 0.6 }}>Question groups</h3>
         <p style={{ ...styles.textBody, margin: '0 0 10px' }}>
-          Group columns that belong to the same question (e.g. checkbox set, matrix rows, ranking items). Assign variables above with the &quot;Question group&quot; dropdown.
+          Assign variables in the table with the &quot;Question group&quot; column.
         </p>
         <button
           type="button"
           onClick={addQuestionGroup}
           style={{ ...styles.btn, ...styles.btnPrimary, marginTop: 0, marginBottom: 12 }}
+          title="Create a new question group, then assign variables to it in the table."
         >
           Add question group
         </button>
         {questionGroups.length === 0 ? (
-          <p style={{ fontSize: 14, color: '#7f8c8d', margin: 0 }}>No groups yet. Add one or assign variables to &quot;+ New question group…&quot; in the table.</p>
+          <p style={{ fontSize: 14, opacity: 0.7, margin: 0 }}>No groups yet. Add one, then assign variables in the table.</p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {questionGroups.map((g) => (
@@ -402,12 +413,14 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     value={g.label}
                     onChange={(e) => updateGroup(g.id, { label: e.target.value })}
                     placeholder="Question label"
+                    title="Name for this question group (e.g. &quot;Q5 Check all that apply&quot;)"
                     style={{ padding: '4px 8px', minWidth: 160, borderRadius: 4, border: '1px solid #ced4da' }}
                   />
                   <select
                     value={g.type}
                     onChange={(e) => updateGroup(g.id, { type: e.target.value as QuestionGroupType })}
                     style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ced4da' }}
+                    title="Checkbox = multiple response; Matrix = grid; Ranking = order; Group = other."
                   >
                     {QUESTION_GROUP_TYPES.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -418,6 +431,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                   <button
                     type="button"
                     onClick={() => removeQuestionGroup(g.id)}
+                    title="Remove this group; variables will be unassigned."
                     style={{
                       padding: '4px 8px',
                       background: 'transparent',
@@ -481,11 +495,12 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
           type="button"
           onClick={confirmVariableView}
           style={{ ...styles.btn, background: theme.colors.text, color: '#FFFFFF', border: `1px solid ${theme.colors.text}`, marginTop: 0 }}
+          title="Confirm variable settings and enable Test Suggester and Insights."
         >
           Process Data
         </button>
         {dataset.variableViewConfirmed && summaryAck && (
-          <span style={{ ...styles.textBody, opacity: 0.7 }}>✅ Variable view confirmed. Use Test Suggester or Insights.</span>
+          <span style={{ ...styles.textBody, opacity: 0.7 }} title="You can now run tests or generate the report.">✅ Confirmed. Use Test Suggester or Insights.</span>
         )}
       </div>
     </section>
