@@ -201,17 +201,35 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
                       Suggestion: {item.suggestion}
                     </div>
                   )}
-                  {item.variable && item.category === 'missing' && onDatasetChange && (
-                    <div style={{ marginTop: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: theme.colors.accent }}>Recommended: </span>
-                      <button type="button" onClick={() => handleExcludeFromAnalysis(item.variable!)} style={btnPrimary}>
-                        Exclude from analysis
-                      </button>
-                      {onOpenVariableView && (
-                        <button type="button" onClick={onOpenVariableView} style={btn}>
-                          Or fix in Variable View
+                  {item.category === 'missing' && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: '10px 12px',
+                        background: 'rgba(0,0,0,0.04)',
+                        borderRadius: 6,
+                        border: '1px solid rgba(0,0,0,0.08)',
+                      }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 600, color: theme.colors.textMuted, marginBottom: 6 }}>
+                        Actions
+                      </div>
+                      {item.variable && onDatasetChange ? (
+                        <>
+                          <button type="button" onClick={() => handleExcludeFromAnalysis(item.variable!)} style={btnPrimary}>
+                            Exclude from analysis
+                          </button>
+                          {onOpenVariableView && (
+                            <button type="button" onClick={onOpenVariableView} style={btn}>
+                              Or fix in Variable View
+                            </button>
+                          )}
+                        </>
+                      ) : onOpenVariableView ? (
+                        <button type="button" onClick={onOpenVariableView} style={btnPrimary}>
+                          Go to Variable View to fix
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   )}
                   {item.id === 'duplicate-rows' && onDatasetChange && (
@@ -233,7 +251,7 @@ export function DataReadinessPanel({ dataset, onDatasetChange, onOpenVariableVie
                       </button>
                     </div>
                   )}
-                  {onOpenVariableView && !item.variable && item.category !== 'outliers' && item.id !== 'duplicate-rows' && (
+                  {onOpenVariableView && item.category !== 'missing' && item.category !== 'outliers' && item.id !== 'duplicate-rows' && (
                     <div style={{ marginTop: 8 }}>
                       <button type="button" onClick={onOpenVariableView} style={btn}>
                         Go to Variable View to fix
