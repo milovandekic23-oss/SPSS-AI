@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Component, type ErrorInfo } from 'react'
 import { VariableView } from './modules/VariableView'
 import { TestSuggester } from './modules/TestSuggester'
 import { Insights } from './modules/Insights'
@@ -6,6 +6,36 @@ import { DataReadinessPanel, getDataReadinessForApp } from './modules/DataReadin
 import { canProceedToTests } from './lib/dataReadiness'
 import type { DatasetState } from './types'
 import { styles } from './theme'
+
+class MainErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('App error:', error, info.componentStack)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <main style={{ ...styles.main, padding: 24 }}>
+          <div style={{ padding: 24, background: '#fff5f5', border: '1px solid #e74c3c', borderRadius: 8 }}>
+            <strong>Something went wrong</strong>
+            <p style={{ margin: '12px 0 0', fontSize: 13 }}>{this.state.error.message}</p>
+            <button
+              type="button"
+              style={{ marginTop: 16, padding: '8px 16px', cursor: 'pointer' }}
+              onClick={() => this.setState({ error: null })}
+            >
+              Try again
+            </button>
+          </div>
+        </main>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function App() {
   const [dataset, setDataset] = useState<DatasetState | null>(null)
@@ -75,15 +105,17 @@ function App() {
       {dataset?.variableViewConfirmed && <DataReadinessPanel dataset={dataset} />}
 
       <main style={styles.main}>
-        {activeModule === 'variable' && (
-          <VariableView dataset={dataset} onDatasetChange={setDataset} />
-        )}
-        {activeModule === 'tests' && dataset?.variableViewConfirmed && (
-          <TestSuggester dataset={dataset} />
-        )}
-        {activeModule === 'insights' && dataset?.variableViewConfirmed && (
-          <Insights dataset={dataset} />
-        )}
+        <MainErrorBoundary>
+          {activeModule === 'variable' && (
+            <VariableView dataset={dataset} onDatasetChange={setDataset} />
+          )}
+          {activeModule === 'tests' && dataset?.variableViewConfirmed && (
+            <TestSuggester dataset={dataset} />
+          )}
+          {activeModule === 'insights' && dataset?.variableViewConfirmed && (
+            <Insights dataset={dataset} />
+          )}
+        </MainErrorBoundary>
       </main>
     </div>
   )

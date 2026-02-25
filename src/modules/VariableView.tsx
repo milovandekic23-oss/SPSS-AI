@@ -287,22 +287,29 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
       const reader = new FileReader()
       reader.onload = () => {
         try {
-          const text = String(reader.result)
+          const text = String(reader.result ?? '')
           const { variables, rows } = parseCSV(text)
-          if (variables.length === 0) {
-            setError('No columns or data found in the CSV.')
+          if (!variables?.length) {
+            setError('No columns or data found in the CSV. Use a header row and at least one data row.')
+            e.target.value = ''
             return
           }
           onDatasetChange({
             variables,
-            rows,
+            rows: rows ?? [],
             variableViewConfirmed: false,
             questionGroups: [],
           })
           setSummaryAck(false)
+          e.target.value = ''
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to parse CSV.')
+          e.target.value = ''
         }
+      }
+      reader.onerror = () => {
+        setError('Could not read the file.')
+        e.target.value = ''
       }
       reader.readAsText(file, 'UTF-8')
     },
@@ -325,7 +332,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
     setSummaryAck(true)
   }, [dataset, onDatasetChange])
 
-  if (!dataset) {
+  if (!dataset || !Array.isArray(dataset.variables) || dataset.variables.length === 0) {
     return (
       <section>
         <header style={styles.sectionHeader}>

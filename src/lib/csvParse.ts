@@ -40,11 +40,16 @@ function toLabel(name: string): string {
 }
 
 export function parseCSV(csvText: string): { variables: VariableMeta[]; rows: DataRow[] } {
+  if (!csvText || typeof csvText !== 'string') return { variables: [], rows: [] }
   const parsed = Papa.parse<string[]>(csvText, { skipEmptyLines: true })
-  const rows = parsed.data
+  const rows = Array.isArray(parsed?.data) ? parsed.data : []
   if (rows.length < 2) return { variables: [], rows: [] }
 
-  const headers = rows[0]
+  const rawHeaders = rows[0]
+  const headers: string[] = rawHeaders.map((h, j) => {
+    const s = (h != null ? String(h).trim() : '') || `Column_${j + 1}`
+    return s
+  })
   const dataRows: DataRow[] = []
   const colValues: (string | number | null)[][] = headers.map(() => [])
 
