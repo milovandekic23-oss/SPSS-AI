@@ -21,6 +21,17 @@ export interface VariableMeta {
   missingPct: number
 }
 
+/** Type of multi-column question (survey-style) */
+export type QuestionGroupType = 'checkbox' | 'matrix' | 'ranking' | 'group'
+
+/** Group of columns treated as one question (e.g. checkbox, matrix, ranking) */
+export interface QuestionGroup {
+  id: string
+  label: string
+  type: QuestionGroupType
+  variableNames: string[]
+}
+
 /** Row of data keyed by variable name */
 export type DataRow = Record<string, string | number | null>
 
@@ -29,4 +40,6 @@ export interface DatasetState {
   variables: VariableMeta[]
   rows: DataRow[]
   variableViewConfirmed: boolean
+  /** Columns grouped into one question (checkbox, matrix, ranking, etc.) */
+  questionGroups: QuestionGroup[]
 }

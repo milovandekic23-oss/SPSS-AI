@@ -1,25 +1,26 @@
 import { useState } from 'react'
 import type { DatasetState } from '../types'
+import { getSuggestedVariables, runTest, type TestId, type TestResult } from '../lib/statsRunner'
+import { TestResultPanel } from './TestResultPanel'
 
 interface TestSuggesterProps {
   dataset: DatasetState
 }
 
-/** Placeholder: real implementation would analyze data and list tests per spec */
-const TIER1 = [
+const TIER1: { id: TestId; name: string; forLevels: string }[] = [
   { id: 'freq', name: 'Frequencies & percentages', forLevels: 'Nominal/Ordinal' },
   { id: 'desc', name: 'Mean, Median, SD, Min, Max', forLevels: 'Scale' },
   { id: 'missing', name: 'Missing value summary', forLevels: 'All' },
 ]
 
-const TIER2 = [
+const TIER2: { id: TestId; name: string; forLevels: string }[] = [
   { id: 'crosstab', name: 'Crosstabulation + Chi-Square', forLevels: 'Nominal × Nominal' },
   { id: 'corr', name: 'Correlation (Pearson / Spearman)', forLevels: 'Scale × Scale or Ordinal' },
   { id: 'ttest', name: 'Independent Samples T-Test', forLevels: 'Scale outcome, 2 groups' },
   { id: 'anova', name: 'One-Way ANOVA', forLevels: 'Scale outcome, 3+ groups' },
 ]
 
-const TIER3 = [
+const TIER3: { id: TestId; name: string; forLevels: string }[] = [
   { id: 'linreg', name: 'Linear Regression', forLevels: 'Predict Scale outcome' },
   { id: 'logreg', name: 'Logistic Regression', forLevels: 'Predict Binary outcome' },
   { id: 'mann', name: 'Mann-Whitney U / Kruskal-Wallis', forLevels: 'Non-parametric' },
@@ -27,8 +28,20 @@ const TIER3 = [
 ]
 
 export function TestSuggester({ dataset }: TestSuggesterProps) {
-  const [runId, setRunId] = useState<string | null>(null)
+  const [result, setResult] = useState<TestResult | null>(null)
+  const [runningId, setRunningId] = useState<TestId | null>(null)
   const n = dataset.rows.length
+
+  const handleRun = (testId: TestId) => {
+    setRunningId(testId)
+    setResult(null)
+    try {
+      const res = runTest(testId, dataset)
+      setResult(res ?? null)
+    } finally {
+      setRunningId(null)
+    }
+  }
 
   return (
     <section>
@@ -49,9 +62,10 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
             <TestCard
               name={t.name}
               forLevels={t.forLevels}
-              id={t.id}
-              onRun={() => setRunId(t.id)}
-              running={runId === t.id}
+              testId={t.id}
+              dataset={dataset}
+              onRun={() => handleRun(t.id)}
+              running={runningId === t.id}
             />
           </li>
         ))}
@@ -64,9 +78,10 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
             <TestCard
               name={t.name}
               forLevels={t.forLevels}
-              id={t.id}
-              onRun={() => setRunId(t.id)}
-              running={runId === t.id}
+              testId={t.id}
+              dataset={dataset}
+              onRun={() => handleRun(t.id)}
+              running={runningId === t.id}
             />
           </li>
         ))}
@@ -79,19 +94,20 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
             <TestCard
               name={t.name}
               forLevels={t.forLevels}
-              id={t.id}
-              onRun={() => setRunId(t.id)}
-              running={runId === t.id}
+              testId={t.id}
+              dataset={dataset}
+              onRun={() => handleRun(t.id)}
+              running={runningId === t.id}
             />
           </li>
         ))}
       </ul>
 
-      {runId && (
-        <div style={{ marginTop: 24, padding: 16, background: '#ecf0f1', borderRadius: 8 }}>
-          <strong>Result placeholder</strong>: Run &quot;{runId}&quot; — actual statistics will be computed here (e.g.
-          p-value, effect size). Plain-language interpretation will appear below.
-        </div>
+      {result && (
+        <TestResultPanel
+          result={result}
+          onClose={() => setResult(null)}
+        />
       )}
     </section>
   )
@@ -100,38 +116,52 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
 function TestCard({
   name,
   forLevels,
-  id: _id,
+  testId,
+  dataset,
   onRun,
   running,
 }: {
   name: string
   forLevels: string
-  id: string
+  testId: TestId
+  dataset: DatasetState
   onRun: () => void
   running: boolean
 }) {
+  const suggested = getSuggestedVariables(testId, dataset)
+  const hasVars = suggested.variables.length > 0
+
   return (
     <div
       style={{
         border: '1px solid #bdc3c7',
         borderRadius: 8,
-        padding: 12,
+        padding: 14,
         background: '#fff',
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 4 }}>✅ {name}</div>
-      <div style={{ fontSize: 14, color: '#555', marginBottom: 8 }}>Applies to: {forLevels}</div>
+      <div style={{ fontSize: 14, color: '#555', marginBottom: 6 }}>Applies to: {forLevels}</div>
+      <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 8 }}>
+        <strong>Analyzes:</strong>{' '}
+        {hasVars
+          ? suggested.variables.map((v) => `${v.label} (${v.role})`).join('; ')
+          : 'No matching variables in your data — add nominal/scale variables to run this test.'}
+      </div>
+      <div style={{ fontSize: 13, color: '#7f8c8d', marginBottom: 10 }}>
+        {suggested.description}
+      </div>
       <button
         type="button"
         onClick={onRun}
-        disabled={running}
+        disabled={running || !hasVars}
         style={{
           padding: '0.35rem 0.75rem',
-          background: running ? '#95a5a6' : '#3498db',
+          background: running || !hasVars ? '#95a5a6' : '#3498db',
           color: '#fff',
           border: 'none',
           borderRadius: 4,
-          cursor: running ? 'default' : 'pointer',
+          cursor: running || !hasVars ? 'default' : 'pointer',
         }}
       >
         {running ? 'Running…' : 'Run this test'}
