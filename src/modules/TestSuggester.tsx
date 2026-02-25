@@ -69,6 +69,9 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
       </p>
 
       <h3 style={{ ...styles.textLabel, marginBottom: 12, opacity: 0.7 }}>Tier 1 — Descriptive statistics (run first)</h3>
+      <p style={{ ...styles.textBody, marginBottom: 12, fontSize: 13, opacity: 0.85 }}>
+        Summarize before segmenting: run these to understand the average respondent, then use Tier 2 to compare groups.
+      </p>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER1.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>
@@ -96,6 +99,13 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
       </ul>
 
       <h3 style={{ ...styles.textLabel, marginBottom: 12, opacity: 0.7 }}>Tier 4 — Multivariate</h3>
+      {dataset.questionGroups?.some(
+        (g) => dataset.variables.filter((v) => v.measurementLevel === 'scale' && g.variableNames.includes(v.name)).length >= 5
+      ) && (
+        <p style={{ ...styles.textBody, marginBottom: 12, fontSize: 13, opacity: 0.85 }}>
+          You have a question group with 5+ scale variables — consider PCA to reduce dimensions to fewer themes.
+        </p>
+      )}
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {TIER4.map((id) => (
           <li key={id} style={{ marginBottom: 12 }}>

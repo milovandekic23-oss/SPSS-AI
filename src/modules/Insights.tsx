@@ -113,6 +113,9 @@ function ReportView({
               </li>
             ))}
           </ul>
+          <p style={{ margin: '12px 0 0', fontSize: 13, opacity: 0.85, fontStyle: 'italic', ...styles.textBody }}>
+            Consider checking for evidence that might contradict your first major insight to ensure it&apos;s robust.
+          </p>
         </div>
       )}
 

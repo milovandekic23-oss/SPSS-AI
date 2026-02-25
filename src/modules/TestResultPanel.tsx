@@ -36,7 +36,8 @@ function cellDisplay(
 }
 
 export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
-  const { testName, table, chart, insight, keyStat, variablesAnalyzed, plainLanguage, nextStep, valueLabelMaps } = result
+  const { testName, table, chart, insight, keyStat, variablesAnalyzed, plainLanguage, nextStep, valueLabelMaps, effectSize, effectSizeLabel } = result
+  const hasPValue = Array.isArray(table) && table.some((r) => r && typeof r === 'object' && String((r as Record<string, unknown>).Statistic ?? '').toLowerCase().includes('p-value'))
   const safeTable = Array.isArray(table) ? table : []
   const tableHeaders = safeTable.length > 0 ? Object.keys(safeTable[0]) : []
   const safeChart = chart && Array.isArray(chart.data) && chart.data.length > 0 ? chart : null
@@ -121,6 +122,16 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
           <span style={{ color: '#e67e22' }}>{resultValidation.issues.join(' ')}</span>
         )}
       </div>
+      {hasPValue && (
+        <p style={{ fontSize: 12, marginBottom: 16, color: '#7f8c8d', fontStyle: 'italic' }}>
+          Small p-value does not mean large effect; check effect size for practical importance.
+          {effectSize != null && effectSizeLabel && (
+            <span style={{ marginLeft: 6 }}>
+              {effectSizeLabel} = {typeof effectSize === 'number' ? (effectSize < 0.01 ? effectSize.toFixed(3) : effectSize.toFixed(2)) : effectSize}.
+            </span>
+          )}
+        </p>
+      )}
 
       {safeTable.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 20 }}>

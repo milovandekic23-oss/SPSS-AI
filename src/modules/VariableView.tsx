@@ -90,6 +90,22 @@ function effectiveMissingPct(rows: { [key: string]: string | number | null }[], 
   return Math.round((missing / rows.length) * 1000) / 10
 }
 
+/** Max share of a single category (0–100). >90% = low variance for group comparisons. */
+function maxCategoryShare(rows: { [key: string]: string | number | null }[], varName: string, missingCodes: (number | string)[]): number {
+  const codeSet = new Set(missingCodes.map((c) => String(c)))
+  const counts: Record<string, number> = {}
+  let total = 0
+  for (const row of rows) {
+    const v = row[varName]
+    if (v === null || v === undefined || v === '' || codeSet.has(String(v))) continue
+    const key = String(v)
+    counts[key] = (counts[key] ?? 0) + 1
+    total++
+  }
+  if (total === 0) return 0
+  return Math.round((Math.max(...Object.values(counts)) / total) * 1000) / 10
+}
+
 function ColHeader({ title }: { title: string }) {
   const tooltip = COLUMN_TOOLTIPS[title]
   return (
@@ -352,12 +368,17 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         ? effectiveMissingPct(rows, v.name, v.missingCodes)
         : v.missingPct
       if (pct > 30) warnings.push(`"${v.label || v.name}" has high missing (${pct}%). Consider excluding or imputing.`)
+      if (pct > 20 && pct <= 30) warnings.push(`"${v.label || v.name}" has >20% missing (${pct}%) — prioritize lower-missing variables for key analyses.`)
       if (v.measurementLevel === 'scale' && v.variableType === 'string')
         warnings.push(`"${v.label || v.name}": Measure is Scale but Type is String — analyses may expect numeric values.`)
       if ((v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') && v.variableType === 'date')
         warnings.push(`"${v.label || v.name}": categorical Measure with Date type may not match expected codes.`)
       if (v.measurementLevel === 'ordinal' && (!v.valueLabels || v.valueLabels.length === 0))
         warnings.push(`"${v.label || v.name}" is Ordinal but has no value labels — consider adding labels for clearer reports.`)
+      if ((v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') && (v.includeInAnalysis !== false)) {
+        const share = maxCategoryShare(rows, v.name, v.missingCodes ?? [])
+        if (share > 90) warnings.push(`"${v.label || v.name}" has one response >90% — low variance for group comparisons.`)
+      }
     }
     return warnings
   }, [dataset.variables, dataset.rows])

@@ -129,6 +129,10 @@ export interface TestResult {
   plainLanguage?: string
   /** Short actionable recommendation: "Next step: ..." */
   nextStep?: string
+  /** Effect size for interpretation (e.g. Cohen's d, r, R², Cramér's V). Used to sort bivariate findings. */
+  effectSize?: number
+  /** Label for effect size (e.g. "Cohen's d", "r", "R²"). */
+  effectSizeLabel?: string
 }
 
 /** User-defined missing codes: values to exclude from analysis (e.g. 99, 999, "Refused"). */
@@ -236,13 +240,73 @@ function includedVariables(dataset: DatasetState) {
   return dataset.variables.filter((v) => v.includeInAnalysis !== false)
 }
 
+/** Effective missing % for a variable (empty + user-defined missing). Used for 80/20 heuristic. */
+function effectiveMissingPct(rows: DataRow[], varName: string, missingCodes: (number | string)[]): number {
+  if (!rows.length) return 0
+  let missing = 0
+  for (const row of rows) {
+    if (isUserMissing(row[varName], missingCodes)) missing++
+  }
+  return Math.round((missing / rows.length) * 1000) / 10
+}
+
+/** Max share of a single category (0–100). >90% means low variance for group comparisons. */
+function maxCategoryShare(rows: DataRow[], varName: string, missingCodes: (number | string)[]): number {
+  const counts: Record<string, number> = {}
+  let total = 0
+  for (const row of rows) {
+    const v = row[varName]
+    if (isUserMissing(v, missingCodes)) continue
+    const key = String(v)
+    counts[key] = (counts[key] ?? 0) + 1
+    total++
+  }
+  if (total === 0) return 0
+  return Math.round((Math.max(...Object.values(counts)) / total) * 1000) / 10
+}
+
+/** Prefer variables with <20% missing; for categorical, prefer max category share <90%. */
+function sortByDataHygiene<T extends { name: string; missingCodes?: (number | string)[] }>(
+  vars: T[],
+  rows: DataRow[],
+  options: { categorical?: boolean } = {}
+): T[] {
+  return [...vars].sort((a, b) => {
+    const missingA = effectiveMissingPct(rows, a.name, a.missingCodes ?? [])
+    const missingB = effectiveMissingPct(rows, b.name, b.missingCodes ?? [])
+    if (missingA !== missingB) return missingA - missingB
+    if (options.categorical) {
+      const shareA = maxCategoryShare(rows, a.name, a.missingCodes ?? [])
+      const shareB = maxCategoryShare(rows, b.name, b.missingCodes ?? [])
+      return shareA - shareB
+    }
+    return 0
+  })
+}
+
 export function getSuggestedVariables(testId: TestId, dataset: DatasetState): SuggestedVars {
   const variables = includedVariables(dataset)
   const { rows, questionGroups } = dataset
-  const scaleVars = variables.filter((v) => v.measurementLevel === 'scale')
-  const nominalVars = variables.filter((v) => v.measurementLevel === 'nominal')
-  const ordinalVars = variables.filter((v) => v.measurementLevel === 'ordinal')
+  /** 80/20 & variance heuristics: prefer <20% missing; for categorical, prefer max category share <90%. */
+  const scaleVars = sortByDataHygiene(
+    variables.filter((v) => v.measurementLevel === 'scale'),
+    rows
+  )
+  const nominalVars = sortByDataHygiene(
+    variables.filter((v) => v.measurementLevel === 'nominal'),
+    rows,
+    { categorical: true }
+  )
+  const ordinalVars = sortByDataHygiene(
+    variables.filter((v) => v.measurementLevel === 'ordinal'),
+    rows,
+    { categorical: true }
+  )
   const categoricalVars = [...nominalVars, ...ordinalVars]
+  /** North Star: prefer role "target" as outcome when present. */
+  const targetScale = scaleVars.find((v) => v.role === 'target')
+  const targetNominal = nominalVars.find((v) => v.role === 'target')
+  const targetOrdinal = ordinalVars.find((v) => v.role === 'target')
   /** Prefer scale variables from the same question group for paired / repeated measures. */
   const pairedFromGroup =
     questionGroups?.length && scaleVars.length >= 2
@@ -320,7 +384,7 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
       }
     }
     case 'ttest': {
-      const scale = scaleVars[0]
+      const scale = targetScale ?? scaleVars[0]
       const groupVar = nominalVars.find((v) => {
         const vals = getDistinctValues(rows, v.name, v.missingCodes ?? [])
         return vals.length === 2
@@ -339,7 +403,7 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
         testId: 'anova',
         description: 'Compare mean of a numeric outcome across 3+ groups.',
         variables: [
-          ...(scaleVars[0] ? [{ name: scaleVars[0].name, label: scaleVars[0].label, role: 'outcome' }] : []),
+          ...(targetScale ?? scaleVars[0] ? [{ name: (targetScale ?? scaleVars[0])!.name, label: (targetScale ?? scaleVars[0])!.label, role: 'outcome' }] : []),
           ...(nominalVars[0] ? [{ name: nominalVars[0].name, label: nominalVars[0].label, role: 'group' }] : []),
         ],
       }
@@ -348,25 +412,27 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
         testId: 'linreg',
         description: 'Linear regression: predict a scale outcome from one or more predictors.',
         variables: [
-          ...(scaleVars[0] ? [{ name: scaleVars[0].name, label: scaleVars[0].label, role: 'outcome' }] : []),
+          ...(targetScale ?? scaleVars[0] ? [{ name: (targetScale ?? scaleVars[0])!.name, label: (targetScale ?? scaleVars[0])!.label, role: 'outcome' }] : []),
           ...variables.filter((v) => v.measurementLevel === 'scale' || v.measurementLevel === 'nominal').slice(0, 5).map((v) => ({ name: v.name, label: v.label, role: 'predictor' })),
         ],
       }
-    case 'logreg':
+    case 'logreg': {
+      const binaryOutcome = targetNominal ?? nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)
       return {
         testId: 'logreg',
         description: 'Logistic regression: binary outcome predicted from one or more predictors.',
         variables: [
-          ...(nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2) ? [{ name: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.name, label: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.label, role: 'outcome' }] : []),
+          ...(binaryOutcome ? [{ name: binaryOutcome.name, label: binaryOutcome.label, role: 'outcome' }] : []),
           ...variables.filter((v) => v.measurementLevel === 'scale' || v.measurementLevel === 'nominal').slice(0, 5).map((v) => ({ name: v.name, label: v.label, role: 'predictor' })),
         ],
       }
+    }
     case 'mann':
       return {
         testId: 'mann',
         description: 'Mann-Whitney U (2 groups) or Kruskal-Wallis (3+ groups): non-parametric comparison.',
         variables: [
-          ...(scaleVars[0] || ordinalVars[0] ? [{ name: (scaleVars[0] ?? ordinalVars[0])!.name, label: (scaleVars[0] ?? ordinalVars[0])!.label, role: 'outcome' }] : []),
+          ...(targetScale ?? targetOrdinal ?? scaleVars[0] ?? ordinalVars[0] ? [{ name: (targetScale ?? targetOrdinal ?? scaleVars[0] ?? ordinalVars[0])!.name, label: (targetScale ?? targetOrdinal ?? scaleVars[0] ?? ordinalVars[0])!.label, role: 'outcome' }] : []),
           ...(nominalVars[0] ? [{ name: nominalVars[0].name, label: nominalVars[0].label, role: 'group' }] : []),
         ],
       }
@@ -646,10 +712,15 @@ export function runTest(
         Object.keys(rowMap).length > 0 || Object.keys(colMap).length > 0
           ? { [rowVar]: rowMap, [colVar]: colMap }
           : undefined
+      const minDim = Math.min(rowVals.length, colVals.length) - 1
+      const cramersV = total > 0 && minDim > 0 ? Math.sqrt(chiSq / (total * minDim)) : 0
       return {
         testId,
         testName: 'Crosstabulation + Chi-Square',
-        table,
+        table: [
+          ...table,
+          ...(cramersV > 0 ? [{ Statistic: "Cramér's V", Value: Math.round(cramersV * 1000) / 1000 }] : []),
+        ],
         chart,
         insight,
         keyStat: `χ² = ${chiSq.toFixed(2)}, df = ${df}`,
@@ -660,6 +731,8 @@ export function runTest(
           { name: colVar, label: colLabel, role: 'column variable' },
         ],
         valueLabelMaps,
+        effectSize: cramersV,
+        effectSizeLabel: "Cramér's V",
       }
     }
 
@@ -729,6 +802,8 @@ export function runTest(
           { label: v1Label, role: 'variable 1' },
           { label: v2Label, role: 'variable 2' },
         ],
+        effectSize: Math.abs(r),
+        effectSizeLabel: 'r',
       }
     }
 
@@ -799,6 +874,8 @@ export function runTest(
           { label: v1Label, role: 'variable 1' },
           { label: v2Label, role: 'variable 2' },
         ],
+        effectSize: Math.abs(rho),
+        effectSizeLabel: 'ρ',
       }
     }
 
@@ -841,12 +918,20 @@ export function runTest(
       const { t: welchT, df: welchDf, p: welchP } = welchTTest(sample1, sample2)
       const skew1 = sample1.length >= 3 ? sampleSkewness(sample1) : 0
       const skew2 = sample2.length >= 3 ? sampleSkewness(sample2) : 0
+      const s1 = standardDeviation(sample1)
+      const s2 = standardDeviation(sample2)
+      const n1 = sample1.length
+      const n2 = sample2.length
+      const pooledVar = (n1 - 1) * s1 * s1 + (n2 - 1) * s2 * s2
+      const pooledSD = df > 0 && pooledVar >= 0 ? Math.sqrt(pooledVar / df) : 0
+      const cohensD = pooledSD > 0 ? (m1 - m2) / pooledSD : 0
       const table: ResultRow[] = [
-        { Group: String(g1), N: sample1.length, Mean: Math.round(m1 * 1000) / 1000, SD: Math.round(standardDeviation(sample1) * 1000) / 1000, Skewness: sample1.length >= 3 ? Math.round(skew1 * 1000) / 1000 : '—' },
-        { Group: String(g2), N: sample2.length, Mean: Math.round(m2 * 1000) / 1000, SD: Math.round(standardDeviation(sample2) * 1000) / 1000, Skewness: sample2.length >= 3 ? Math.round(skew2 * 1000) / 1000 : '—' },
+        { Group: String(g1), N: sample1.length, Mean: Math.round(m1 * 1000) / 1000, SD: Math.round(s1 * 1000) / 1000, Skewness: sample1.length >= 3 ? Math.round(skew1 * 1000) / 1000 : '—' },
+        { Group: String(g2), N: sample2.length, Mean: Math.round(m2 * 1000) / 1000, SD: Math.round(s2 * 1000) / 1000, Skewness: sample2.length >= 3 ? Math.round(skew2 * 1000) / 1000 : '—' },
         { Statistic: 't (pooled)', Value: Math.round(t * 1000) / 1000 },
         { Statistic: 'df', Value: df },
         { Statistic: 'p-value (approx)', Value: p < 0.001 ? '< 0.001' : Math.round(p * 1000) / 1000 },
+        { Statistic: "Cohen's d", Value: Math.round(cohensD * 1000) / 1000 },
         { Statistic: "Levene's F", Value: Math.round(leveneF * 1000) / 1000 },
         { Statistic: "Levene's p", Value: leveneP < 0.001 ? '< 0.001' : Math.round(leveneP * 1000) / 1000 },
         { Statistic: 'Welch t', Value: Math.round(welchT * 1000) / 1000 },
@@ -888,6 +973,8 @@ export function runTest(
           { label: outcomeLabel, role: 'outcome' },
           { label: groupLabel, role: 'group' },
         ],
+        effectSize: Math.abs(cohensD),
+        effectSizeLabel: "Cohen's d",
       }
     }
 
@@ -938,6 +1025,8 @@ export function runTest(
       const F = MSW > 0 ? MSB / MSW : 0
       const p = fToPValue(F, df1, df2)
       const { F: leveneF, p: leveneP } = leveneTest(samples)
+      const SST = SSB + SSW
+      const etaSq = SST > 0 ? SSB / SST : 0
       const table: ResultRow[] = [
         ...groupVals.map((g, j) => ({
           Group: String(g),
@@ -949,6 +1038,7 @@ export function runTest(
         { Statistic: 'df1 (groups)', Value: df1 },
         { Statistic: 'df2 (error)', Value: df2 },
         { Statistic: 'p-value (approx)', Value: p < 0.001 ? '< 0.001' : Math.round(p * 1000) / 1000 },
+        { Statistic: 'η² (eta-squared)', Value: Math.round(etaSq * 1000) / 1000 },
         { Statistic: "Levene's F", Value: Math.round(leveneF * 1000) / 1000 },
         { Statistic: "Levene's p", Value: leveneP < 0.001 ? '< 0.001' : Math.round(leveneP * 1000) / 1000 },
       ]
@@ -1001,6 +1091,8 @@ export function runTest(
           { label: outcomeLabel, role: 'outcome' },
           { label: groupLabel, role: 'group' },
         ],
+        effectSize: etaSq,
+        effectSizeLabel: 'η²',
       }
     }
 
@@ -1114,6 +1206,8 @@ export function runTest(
           { label: outcomeLabel, role: 'outcome' },
           ...predictorNames.map((name) => ({ label: getVarLabel(name), role: 'predictor' as const })),
         ],
+        effectSize: rSq,
+        effectSizeLabel: 'R²',
       }
     }
 

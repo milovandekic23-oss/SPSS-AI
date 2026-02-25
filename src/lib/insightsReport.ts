@@ -23,6 +23,9 @@ const REPORT_TEST_ORDER: TestId[] = [
   'pca',
 ]
 
+const TIER1_IDS: TestId[] = ['freq', 'desc', 'missing']
+const BIVARIATE_IDS: TestId[] = ['crosstab', 'corr', 'spearman', 'ttest', 'anova']
+
 /** Minimum variables required for a test to be worth running in the report */
 function hasEnoughVariables(testId: TestId, variableCount: number): boolean {
   switch (testId) {
@@ -91,7 +94,18 @@ export function runInsightsReport(dataset: DatasetState): InsightsReport {
     if (isKey) keyHeadlines.push(getHeadline(result))
   }
 
-  return { findings, keyHeadlines }
+  const tier1 = findings.filter((f) => TIER1_IDS.includes(f.result.testId))
+  const bivariate = findings.filter((f) => BIVARIATE_IDS.includes(f.result.testId))
+  const rest = findings.filter((f) => !TIER1_IDS.includes(f.result.testId) && !BIVARIATE_IDS.includes(f.result.testId))
+  bivariate.sort((a, b) => {
+    const ea = a.result.effectSize ?? -1
+    const eb = b.result.effectSize ?? -1
+    return eb - ea
+  })
+  const sortedFindings = [...tier1, ...bivariate, ...rest]
+  const sortedKeyHeadlines = sortedFindings.filter((f) => f.isKey).map((f) => getHeadline(f.result))
+
+  return { findings: sortedFindings, keyHeadlines: sortedKeyHeadlines }
 }
 
 /** One-line headline for a result (for key findings list and expandable summary). Prefer context + takeaway. */
