@@ -37,7 +37,23 @@ export function TestSuggester({ dataset }: TestSuggesterProps) {
     setResult(null)
     try {
       const res = runTest(testId, dataset)
-      setResult(res ?? null)
+      if (res) {
+        setResult(res)
+      } else {
+        setResult({
+          testId,
+          testName: TIER1.find((t) => t.id === testId)?.name ?? TIER2.find((t) => t.id === testId)?.name ?? TIER3.find((t) => t.id === testId)?.name ?? testId,
+          table: [{ Message: "This test couldn't run with your current data." }],
+          insight: "Not enough suitable variables or data (e.g. need scale variables for descriptive/correlation, or a 2-group categorical for t-test). Check Variable View: set measurement levels and try again.",
+        })
+      }
+    } catch (err) {
+      setResult({
+        testId,
+        testName: 'Error',
+        table: [{ Error: err instanceof Error ? err.message : String(err) }],
+        insight: 'Something went wrong running this test. Check your data and variable types.',
+      })
     } finally {
       setRunningId(null)
     }

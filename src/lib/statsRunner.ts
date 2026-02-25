@@ -223,12 +223,12 @@ export function runTest(
           continue
         }
         const m = mean(vals)
-        const sd = standardDeviation(vals)
+        const sd = vals.length < 2 ? 0 : standardDeviation(vals)
         table.push({
           Variable: getVar(name)?.label ?? name,
           N: vals.length,
           Mean: Math.round(m * 1000) / 1000,
-          SD: Math.round(sd * 1000) / 1000,
+          SD: vals.length < 2 ? '—' : Math.round((sd as number) * 1000) / 1000,
           Min: min(vals),
           Max: max(vals),
         })
