@@ -16,7 +16,9 @@ function App() {
       body { background-color: #F7F7F5; }
     `
     document.head.appendChild(style)
-    return () => document.head.removeChild(style)
+    return () => {
+      document.head.removeChild(style)
+    }
   }, [])
 
   const tabs = [

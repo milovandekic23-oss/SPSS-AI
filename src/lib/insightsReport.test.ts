@@ -6,8 +6,8 @@ import type { DatasetState } from '../types'
 function makeDataset(overrides: Partial<DatasetState> = {}): DatasetState {
   return {
     variables: [
-      { name: 'q1', label: 'Q1', measurementLevel: 'nominal', type: 'string', role: '', valueLabels: {}, missing: [] },
-      { name: 'score', label: 'Score', measurementLevel: 'scale', type: 'number', role: '', valueLabels: {}, missing: [] },
+      { name: 'q1', label: 'Q1', measurementLevel: 'nominal', variableType: 'string', role: 'none', valueLabels: [], missingCodes: [], missingPct: 0 },
+      { name: 'score', label: 'Score', measurementLevel: 'scale', variableType: 'integer', role: 'none', valueLabels: [], missingCodes: [], missingPct: 0 },
     ],
     rows: [
       { q1: 'A', score: 10 },
@@ -38,11 +38,11 @@ describe('insightsReport', () => {
   })
 
   it('getHeadline: uses keyStat when present', () => {
-    expect(getHeadline({ testName: 't-test', table: [], insight: 'Full text.', keyStat: 't = 2.1, p < 0.05' } as TestResult)).toBe('t-test: t = 2.1, p < 0.05')
+    expect(getHeadline({ testId: 'ttest', testName: 't-test', table: [], insight: 'Full text.', keyStat: 't = 2.1, p < 0.05' } as TestResult)).toBe('t-test: t = 2.1, p < 0.05')
   })
 
   it('getHeadline: uses first sentence of insight when no keyStat', () => {
-    expect(getHeadline({ testName: 'Freq', table: [], insight: 'Frequencies for Q1: 2 categories. A: 2 (66.7%); B: 1 (33.3%).' } as TestResult)).toBe('Frequencies for Q1: 2 categories.')
+    expect(getHeadline({ testId: 'freq', testName: 'Freq', table: [], insight: 'Frequencies for Q1: 2 categories. A: 2 (66.7%); B: 1 (33.3%).' } as TestResult)).toBe('Frequencies for Q1: 2 categories.')
   })
 
   it('runInsightsReport returns findings from computed results only', () => {

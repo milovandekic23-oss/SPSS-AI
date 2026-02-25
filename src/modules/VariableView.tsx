@@ -7,7 +7,6 @@ import type {
   VariableType,
   QuestionGroup,
   QuestionGroupType,
-  ValueLabel,
 } from '../types'
 import { parseCSV } from '../lib/csvParse'
 import { styles, theme } from '../theme'
@@ -387,7 +386,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
         warnings.push(`"${v.label || v.name}": categorical Measure with Date type may not match expected codes.`)
       if (v.measurementLevel === 'ordinal' && (!v.valueLabels || v.valueLabels.length === 0))
         warnings.push(`"${v.label || v.name}" is Ordinal but has no value labels — consider adding labels for clearer reports.`)
-      if ((v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') && (v.includeInAnalysis !== false)) {
+      if (v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal') {
         const share = maxCategoryShare(rows, v.name, v.missingCodes ?? [])
         if (share > 90) warnings.push(`"${v.label || v.name}" has one response >90% — low variance for group comparisons.`)
       }

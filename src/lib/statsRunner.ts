@@ -165,7 +165,7 @@ function getDistinctValues(rows: DataRow[], varName: string, missingCodes: (stri
   for (const row of rows) {
     const v = row[varName]
     if (isUserMissing(v, missingCodes)) continue
-    set.add(v)
+    if (v != null) set.add(v)
   }
   return Array.from(set)
 }
