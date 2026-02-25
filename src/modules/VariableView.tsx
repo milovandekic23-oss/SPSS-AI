@@ -4,6 +4,7 @@ import type {
   VariableMeta,
   MeasurementLevel,
   VariableRole,
+  VariableType,
   QuestionGroup,
   QuestionGroupType,
 } from '../types'
@@ -15,12 +16,28 @@ const MEASUREMENT_LEVELS: { value: MeasurementLevel; label: string }[] = [
   { value: 'scale', label: 'Scale' },
 ]
 
+/** SPSS-style labels for Measure (measurement level) */
+const MEASURE_LABELS: Record<MeasurementLevel, string> = {
+  nominal: 'Nominal (categories, no order)',
+  ordinal: 'Ordinal (ordered categories)',
+  scale: 'Scale (numeric, continuous)',
+}
+
 const ROLES: { value: VariableRole; label: string }[] = [
   { value: 'none', label: 'None' },
   { value: 'input', label: 'Input' },
   { value: 'target', label: 'Target' },
   { value: 'id', label: 'ID' },
 ]
+
+/** SPSS-style type labels */
+const VARIABLE_TYPE_LABELS: Record<VariableType, string> = {
+  string: 'String',
+  integer: 'Numeric (integer)',
+  decimal: 'Numeric (decimal)',
+  date: 'Date',
+  boolean: 'Yes/No',
+}
 
 const QUESTION_GROUP_TYPES: { value: QuestionGroupType; label: string }[] = [
   { value: 'checkbox', label: 'Checkbox (multiple response)' },
@@ -29,13 +46,13 @@ const QUESTION_GROUP_TYPES: { value: QuestionGroupType; label: string }[] = [
   { value: 'group', label: 'Group (other)' },
 ]
 
-function MeasurementHelp({ level }: { level: MeasurementLevel }) {
-  const help: Record<MeasurementLevel, string> = {
-    nominal: 'Categories with no order (e.g. gender, country). You can count but not rank.',
-    ordinal: 'Categories with order but unequal gaps (e.g. agree/neutral/disagree, education level).',
-    scale: 'Real numbers where math makes sense (e.g. age, income). Averages and totals are meaningful.',
-  }
-  return <span title={help[level]} style={{ marginLeft: 4, opacity: 0.8 }}>ⓘ</span>
+function ColHeader({ title, help }: { title: string; help?: string }) {
+  return (
+    <th style={thStyle} title={help}>
+      {title}
+      {help && <span style={{ marginLeft: 4, opacity: 0.7, fontWeight: 'normal' }} title={help}>ⓘ</span>}
+    </th>
+  )
 }
 
 interface VariableViewProps {
@@ -186,47 +203,80 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
   const nominal = dataset.variables.filter((v) => v.measurementLevel === 'nominal').length
   const ordinal = dataset.variables.filter((v) => v.measurementLevel === 'ordinal').length
   const scale = dataset.variables.filter((v) => v.measurementLevel === 'scale').length
+  const included = dataset.variables.filter((v) => v.includeInAnalysis !== false).length
+  const excluded = dataset.variables.length - included
 
   return (
     <section>
       <h2>Variable View</h2>
       <p>
-        I found <strong>{dataset.variables.length} variables</strong>. {nominal} Nominal (categories), {ordinal} Ordinal
-        (ranked), {scale} Scale (numeric). Review and edit anything that looks wrong, then confirm.
+        <strong>{dataset.variables.length} variables</strong> — {nominal} Nominal, {ordinal} Ordinal, {scale} Scale.
+        {excluded > 0 && (
+          <span style={{ marginLeft: 8, color: '#7f8c8d' }}>
+            {included} included in analysis, {excluded} excluded (uncheck &quot;In analysis&quot; to exclude).
+          </span>
+        )}
       </p>
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
-        <table style={{ borderCollapse: 'collapse', minWidth: 720 }}>
+        <table style={{ borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
             <tr style={{ background: '#ecf0f1', textAlign: 'left' }}>
-              <th style={thStyle}>Name</th>
-              <th style={thStyle}>Label</th>
-              <th style={thStyle}>Level</th>
-              <th style={thStyle}>Role</th>
-              <th style={thStyle}>Question group</th>
-              <th style={thStyle}>Missing %</th>
+              <ColHeader title="Name" help="Column name (e.g. Q1_age). Like SPSS Variable Name." />
+              <ColHeader title="Type" help="How the value is stored: String, Numeric, Date, Yes/No." />
+              <ColHeader title="Label" help="Human-readable description. Like SPSS Variable Label." />
+              <ColHeader title="Measure" help="Nominal = categories, no order. Ordinal = ordered categories. Scale = numeric, continuous. Like SPSS Measure." />
+              <ColHeader title="Role" help="Input, Target, or ID. Used by some analyses. Like SPSS Role." />
+              <ColHeader title="Missing %" help="Share of empty or missing values in this column." />
+              <ColHeader title="Question group" help="Group columns that belong to one question (e.g. checkbox set, matrix)." />
+              <ColHeader title="In analysis" help="Uncheck to exclude this variable from test suggestions and analyses (like hiding in SPSS)." />
             </tr>
           </thead>
           <tbody>
             {dataset.variables.map((v, i) => (
-              <tr key={v.name} style={{ borderBottom: '1px solid #ddd' }}>
+              <tr
+                key={v.name}
+                style={{
+                  borderBottom: '1px solid #ddd',
+                  background: v.includeInAnalysis === false ? '#f8f9fa' : undefined,
+                  opacity: v.includeInAnalysis === false ? 0.85 : 1,
+                }}
+              >
                 <td style={tdStyle}>
                   <input
                     value={v.name}
                     onChange={(e) => updateVariable(i, { name: e.target.value })}
-                    style={{ width: '100%', maxWidth: 140 }}
+                    style={{ width: '100%', maxWidth: 120 }}
+                    placeholder="Name"
                   />
+                </td>
+                <td style={tdStyle}>
+                  <select
+                    value={v.variableType}
+                    onChange={(e) => updateVariable(i, { variableType: e.target.value as VariableType })}
+                    style={{ minWidth: 100 }}
+                    title={VARIABLE_TYPE_LABELS[v.variableType]}
+                  >
+                    {(Object.keys(VARIABLE_TYPE_LABELS) as VariableType[]).map((t) => (
+                      <option key={t} value={t}>
+                        {VARIABLE_TYPE_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td style={tdStyle}>
                   <input
                     value={v.label}
                     onChange={(e) => updateVariable(i, { label: e.target.value })}
-                    style={{ width: '100%', maxWidth: 180 }}
+                    style={{ width: '100%', maxWidth: 160 }}
+                    placeholder="Label"
                   />
                 </td>
                 <td style={tdStyle}>
                   <select
                     value={v.measurementLevel}
                     onChange={(e) => updateVariable(i, { measurementLevel: e.target.value as MeasurementLevel })}
+                    title={MEASURE_LABELS[v.measurementLevel]}
+                    style={{ minWidth: 100 }}
                   >
                     {MEASUREMENT_LEVELS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -234,33 +284,18 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                       </option>
                     ))}
                   </select>
-                  <MeasurementHelp level={v.measurementLevel} />
                 </td>
                 <td style={tdStyle}>
                   <select
                     value={v.role}
                     onChange={(e) => updateVariable(i, { role: e.target.value as VariableRole })}
+                    style={{ minWidth: 80 }}
                   >
                     {ROLES.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>
                     ))}
-                  </select>
-                </td>
-                <td style={tdStyle}>
-                  <select
-                    value={getGroupIdForVariable(v.name)}
-                    onChange={(e) => assignVariableToGroup(v.name, e.target.value)}
-                    style={{ minWidth: 120 }}
-                  >
-                    <option value="">— None</option>
-                    {questionGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.label} ({g.variableNames.length})
-                      </option>
-                    ))}
-                    <option value="__new__">+ New question group…</option>
                   </select>
                 </td>
                 <td style={tdStyle}>
@@ -271,6 +306,32 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                   ) : (
                     '—'
                   )}
+                </td>
+                <td style={tdStyle}>
+                  <select
+                    value={getGroupIdForVariable(v.name)}
+                    onChange={(e) => assignVariableToGroup(v.name, e.target.value)}
+                    style={{ minWidth: 110 }}
+                  >
+                    <option value="">— None</option>
+                    {questionGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.label} ({g.variableNames.length})
+                      </option>
+                    ))}
+                    <option value="__new__">+ New group…</option>
+                  </select>
+                </td>
+                <td style={tdStyle}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={v.includeInAnalysis !== false}
+                      onChange={(e) => updateVariable(i, { includeInAnalysis: e.target.checked })}
+                      title="Uncheck to exclude this variable from all analyses"
+                    />
+                    <span style={{ fontSize: 13 }}>Yes</span>
+                  </label>
                 </td>
               </tr>
             ))}

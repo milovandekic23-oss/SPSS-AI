@@ -19,6 +19,8 @@ export interface VariableMeta {
   valueLabels: ValueLabel[]
   missingCodes: (number | string)[]
   missingPct: number
+  /** If false, this variable is excluded from test suggestions and analyses (like hiding in SPSS). */
+  includeInAnalysis?: boolean
 }
 
 /** Type of multi-column question (survey-style) */

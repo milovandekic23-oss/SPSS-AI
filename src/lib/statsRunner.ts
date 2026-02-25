@@ -82,8 +82,14 @@ function tToPValue(t: number, df: number): number {
   return Math.min(1, 2 * oneTail)
 }
 
+/** Variables included in analysis (excluded ones are ignored in suggestions and tests). */
+function includedVariables(dataset: DatasetState) {
+  return dataset.variables.filter((v) => v.includeInAnalysis !== false)
+}
+
 export function getSuggestedVariables(testId: TestId, dataset: DatasetState): SuggestedVars {
-  const { variables, rows } = dataset
+  const variables = includedVariables(dataset)
+  const { rows } = dataset
   const scaleVars = variables.filter((v) => v.measurementLevel === 'scale')
   const nominalVars = variables.filter((v) => v.measurementLevel === 'nominal')
   const ordinalVars = variables.filter((v) => v.measurementLevel === 'ordinal')
@@ -174,11 +180,12 @@ export function runTest(
   dataset: DatasetState,
   selectedVarNames?: string[]
 ): TestResult | null {
-  const { variables, rows } = dataset
+  const variables = includedVariables(dataset)
+  const { rows } = dataset
   const n = rows.length
   const scaleVars = variables.filter((v) => v.measurementLevel === 'scale')
   const nominalVars = variables.filter((v) => v.measurementLevel === 'nominal')
-  const getVar = (name: string) => variables.find((v) => v.name === name)!
+  const getVar = (name: string) => dataset.variables.find((v) => v.name === name)!
 
   switch (testId) {
     case 'freq': {
