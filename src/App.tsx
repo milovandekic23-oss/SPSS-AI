@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { VariableView } from './modules/VariableView'
 import { TestSuggester } from './modules/TestSuggester'
 import { Insights } from './modules/Insights'
+import { DataReadinessPanel, getDataReadinessForApp } from './modules/DataReadinessPanel'
+import { canProceedToTests } from './lib/dataReadiness'
 import type { DatasetState } from './types'
 import { styles } from './theme'
 
@@ -26,7 +28,8 @@ function App() {
     { id: 'tests' as const, label: 'Test Suggester' },
     { id: 'insights' as const, label: 'Insights & Charts' },
   ]
-  const canUseTests = dataset?.variableViewConfirmed ?? false
+  const readiness = useMemo(() => getDataReadinessForApp(dataset), [dataset])
+  const canUseTests = Boolean(dataset?.variableViewConfirmed && readiness && canProceedToTests(readiness))
 
   return (
     <div style={styles.root}>
@@ -68,6 +71,8 @@ function App() {
           <span>Ver 2.4</span>
         </div>
       </nav>
+
+      {dataset?.variableViewConfirmed && <DataReadinessPanel dataset={dataset} />}
 
       <main style={styles.main}>
         {activeModule === 'variable' && (

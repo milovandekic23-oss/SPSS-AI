@@ -134,6 +134,33 @@ export const TEST_GUIDANCE: Record<TestId, TestGuidance> = {
     alternatives: 'Factor analysis if you assume latent factors. For classification with groups: discriminant analysis. For multiple outcomes: MANOVA.',
     forLevels: 'Scale variables (two or more)',
   },
+  goodness: {
+    id: 'goodness',
+    name: 'Chi-Square Goodness of Fit',
+    summary: 'Test whether one categorical variable fits a uniform (equal) distribution.',
+    whenToUse: 'Use for one nominal or ordinal variable to test if categories are equally likely (null: uniform distribution).',
+    assumptions: 'Expected frequency ≥ 5 per category (collapse if needed). Independent observations.',
+    alternatives: 'For two categorical variables use crosstab and Chi-Square test of independence.',
+    forLevels: 'Nominal / Ordinal (one variable)',
+  },
+  onesamplet: {
+    id: 'onesamplet',
+    name: 'One-sample t-test',
+    summary: 'Compare a scale variable mean to a known value (e.g. 0).',
+    whenToUse: 'Use when you have one continuous variable and want to test if its mean differs from a specified value (e.g. zero, or a population norm).',
+    assumptions: 'Approximate normality of the variable (or n ≥ 30); independence.',
+    alternatives: 'If non-normal or small n: one-sample Wilcoxon signed-rank test.',
+    forLevels: 'Scale (one variable)',
+  },
+  pointbiserial: {
+    id: 'pointbiserial',
+    name: 'Point-biserial correlation',
+    summary: 'Correlation between a binary variable and a scale variable (Pearson r with 0/1 coding).',
+    whenToUse: 'Use when one variable is binary (e.g. yes/no) and the other is continuous. Same as Pearson r; interpretation focuses on group difference.',
+    assumptions: 'Binary variable coded 0/1; scale variable approximately normal within each group (or n large).',
+    alternatives: 'Equivalent to independent-samples t-test; use t-test for group means and Cohen’s d.',
+    forLevels: 'Binary × Scale',
+  },
 }
 
 export function getTestGuidance(testId: TestId): TestGuidance {

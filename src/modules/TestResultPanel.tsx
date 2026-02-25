@@ -17,6 +17,52 @@ import { styles, theme } from '../theme'
 
 const CHART_COLORS = [theme.colors.accent, '#2ecc71', '#e74c3c', '#9b59b6', '#f39c12']
 
+/** Simple boxplot: one box per row, with min/q1/median/q3/max. */
+function BoxplotChart({
+  data,
+  boxplotKeys,
+  xKey,
+}: {
+  data: Record<string, string | number>[]
+  boxplotKeys: { min: string; q1: string; median: string; q3: string; max: string }
+  xKey?: string
+}) {
+  const num = (v: unknown): number => (typeof v === 'number' && !Number.isNaN(v) ? v : Number(v) ?? 0)
+  const boxH = 40
+  const w = 200
+
+  return (
+    <div style={{ width: '100%' }}>
+      {data.map((row, i) => {
+        const min = num(row[boxplotKeys.min])
+        const q1 = num(row[boxplotKeys.q1])
+        const med = num(row[boxplotKeys.median])
+        const q3 = num(row[boxplotKeys.q3])
+        const max = num(row[boxplotKeys.max])
+        const range = max - min || 1
+        const toX = (v: number) => (10 + ((v - min) / range) * (w - 20))
+        const label = (xKey && row[xKey] != null ? String(row[xKey]) : `Group ${i + 1}`)
+        const x1 = toX(q1)
+        const x3 = toX(q3)
+        const xMed = toX(med)
+        const xMin = toX(min)
+        const xMax = toX(max)
+        return (
+          <div key={i} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+            <svg width="100%" height={boxH + 8} viewBox={`0 0 ${w} ${boxH + 8}`} preserveAspectRatio="xMidYMid meet">
+              <line x1={xMin} x2={xMax} y1={boxH / 2} y2={boxH / 2} stroke="#333" strokeWidth={1} />
+              <rect x={x1} y={4} width={x3 - x1} height={boxH - 8} fill={CHART_COLORS[i % CHART_COLORS.length]} fillOpacity={0.7} stroke="#333" strokeWidth={1} />
+              <line x1={xMed} x2={xMed} y1={4} y2={boxH - 4} stroke="#333" strokeWidth={1.5} />
+            </svg>
+            <div style={{ fontSize: 11, color: '#666' }}>min {min.toFixed(1)} · Q1 {q1.toFixed(1)} · median {med.toFixed(1)} · Q3 {q3.toFixed(1)} · max {max.toFixed(1)}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 interface TestResultPanelProps {
   result: TestResult
   onClose?: () => void
@@ -85,6 +131,16 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
         </div>
       )}
 
+      {result.testId === 'ttest' && (
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: theme.colors.textMuted, ...styles.textBody }}>
+          Assumptions: independence; approximate normality of the outcome in each group. Welch t is reported by default (robust to unequal variances). Check Levene&apos;s test in the table.
+        </p>
+      )}
+      {result.testId === 'anova' && (
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: theme.colors.textMuted, ...styles.textBody }}>
+          Assumptions: independence; approximate normality within each group; homogeneity of variances (Levene&apos;s test in table).
+        </p>
+      )}
       {keyStat && (
         <p style={{ margin: '0 0 12px', ...styles.textBody, fontWeight: 600 }}>
           Key result: {keyStat}
@@ -219,6 +275,8 @@ export function TestResultPanel({ result, onClose }: TestResultPanelProps) {
                     ))}
                   </Scatter>
                 </ScatterChart>
+              ) : safeChart.type === 'boxplot' && safeChart.boxplotKeys ? (
+                <BoxplotChart data={safeChart.data} boxplotKeys={safeChart.boxplotKeys} xKey={safeChart.xKey} />
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#7f8c8d' }}>
                   Chart type not supported

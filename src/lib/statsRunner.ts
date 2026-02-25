@@ -89,6 +89,9 @@ export type TestId =
   | 'mann'
   | 'paired'
   | 'pca'
+  | 'goodness'
+  | 'onesamplet'
+  | 'pointbiserial'
 
 /** Suggested variables for a test: what will be analyzed and how */
 export interface SuggestedVars {
@@ -101,9 +104,9 @@ export interface SuggestedVars {
 /** One row in a results table */
 export type ResultRow = Record<string, string | number>
 
-/** Chart data for Recharts */
+/** Chart data for Recharts; boxplot uses min/q1/median/q3/max per category */
 export interface ChartSpec {
-  type: 'bar' | 'line' | 'pie' | 'scatter'
+  type: 'bar' | 'line' | 'pie' | 'scatter' | 'boxplot'
   title: string
   data: Record<string, string | number>[]
   xKey: string
@@ -111,6 +114,8 @@ export interface ChartSpec {
   /** If set, chart data includes this key (e.g. percent) and UI can toggle count vs percent */
   percentKey?: string
   seriesKeys?: string[]
+  /** For boxplot: data rows have min, q1, median, q3, max (and optional name) */
+  boxplotKeys?: { min: string; q1: string; median: string; q3: string; max: string }
 }
 
 export interface TestResult {
@@ -184,6 +189,15 @@ function fToPValue(F: number, _df1: number, df2: number): number {
   const mu = 1 - 2 / (9 * df2)
   const sigma = Math.sqrt(2 / (9 * df2))
   const z = (Math.pow(F, 1 / 3) - mu) / sigma
+  return 1 - cumulativeStdNormalProbability(z)
+}
+
+/** Approximate p-value for chi-square statistic (Wilson–Hilferty). */
+function chi2ToPValue(chi2: number, df: number): number {
+  if (df < 1 || chi2 <= 0) return 1
+  const mu = 1 - 2 / (9 * df)
+  const sigma = Math.sqrt(2 / (9 * df))
+  const z = (Math.pow(chi2 / df, 1 / 3) - mu) / sigma
   return 1 - cumulativeStdNormalProbability(z)
 }
 
@@ -447,6 +461,27 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
         testId: 'pca',
         description: 'Principal component analysis: dimension reduction for scale variables.',
         variables: scaleVars.slice(0, 8).map((v) => ({ name: v.name, label: v.label, role: 'variable' })),
+      }
+    case 'goodness':
+      return {
+        testId: 'goodness',
+        description: 'Chi-Square Goodness of Fit: test if one categorical variable fits a uniform (equal) distribution.',
+        variables: categoricalVars.slice(0, 5).map((v) => ({ name: v.name, label: v.label, role: 'variable' })),
+      }
+    case 'onesamplet':
+      return {
+        testId: 'onesamplet',
+        description: 'One-sample t-test: compare a scale variable mean to a known value (e.g. 0).',
+        variables: scaleVars.slice(0, 4).map((v) => ({ name: v.name, label: v.label, role: 'variable' })),
+      }
+    case 'pointbiserial':
+      return {
+        testId: 'pointbiserial',
+        description: 'Point-biserial correlation: binary variable × scale variable (same as Pearson, different interpretation).',
+        variables: [
+          ...(nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2) ? [{ name: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.name, label: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.label, role: 'binary variable' }] : []),
+          ...scaleVars.slice(0, 2).map((v) => ({ name: v.name, label: v.label, role: 'scale variable' })),
+        ].filter((x, i, a) => a.findIndex((y) => y.name === x.name) === i),
       }
     default:
       return {
@@ -950,15 +985,18 @@ export function runTest(
       }
       const outcomeLabel = getVar(outcomeName)?.label ?? outcomeName
       const groupLabel = getVar(groupName)?.label ?? groupName
-      const leveneNote = leveneP < 0.05 ? ' Variances differ (Levene p < 0.05); prefer Welch t.' : ' Variances similar (Levene p ≥ 0.05).'
-      const insight = `Mean "${outcomeLabel}" by "${groupLabel}": ${m1.toFixed(2)} (${g1}) vs ${m2.toFixed(2)} (${g2}). ${p < 0.05 ? 'The difference is statistically significant (p < 0.05).' : 'The difference is not statistically significant (p ≥ 0.05).'}${leveneNote}`
+      const useWelch = true
+      const sigP = useWelch ? welchP : p
+      const sigT = useWelch ? welchT : t
+      const leveneNote = leveneP < 0.05 ? ' Variances differ (Levene p < 0.05); Welch t is reported.' : ' Variances similar (Levene p ≥ 0.05).'
+      const insight = `Mean "${outcomeLabel}" by "${groupLabel}": ${m1.toFixed(2)} (${g1}) vs ${m2.toFixed(2)} (${g2}). ${sigP < 0.05 ? 'The difference is statistically significant (Welch p < 0.05).' : 'The difference is not statistically significant (Welch p ≥ 0.05).'}${leveneNote}`
       const diff = m2 - m1
       const plainLanguage =
-        p < 0.05
+        sigP < 0.05
           ? `In practice: "${String(g2)}" scores about ${Math.abs(diff).toFixed(2)} points ${diff > 0 ? 'higher' : 'lower'} on average than "${String(g1)}" for "${outcomeLabel}".`
           : `In practice: we don't see a statistically significant difference in "${outcomeLabel}" between "${String(g1)}" and "${String(g2)}" in this sample.`
-      const nextStep = p < 0.05
-        ? 'Next step: report the group means and SDs and the t-test result; use the table for exact values.'
+      const nextStep = sigP < 0.05
+        ? 'Next step: report the group means and SDs and the Welch t-test result; use the table for exact values.'
         : 'Next step: you can report "no significant difference"; consider confidence interval for the mean difference or a larger sample.'
       return {
         testId,
@@ -966,7 +1004,7 @@ export function runTest(
         table,
         chart,
         insight,
-        keyStat: `t = ${t.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        keyStat: `Welch t = ${sigT.toFixed(2)}, p ${sigP < 0.05 ? '< 0.05' : '≥ 0.05'}`,
         plainLanguage,
         nextStep,
         variablesAnalyzed: [
@@ -1618,11 +1656,186 @@ export function runTest(
       }
     }
 
+    case 'goodness': {
+      const varName = selectedVarNames?.[0] ?? nominalVars[0]?.name ?? ordinalVars[0]?.name
+      if (!varName)
+        return notApplicableResult('goodness', 'Chi-Square Goodness of Fit', 'Need one nominal or ordinal variable.', 'Set a variable to Nominal or Ordinal.')
+      const missingCodes = getVar(varName)?.missingCodes ?? []
+      const counts: Record<string, number> = {}
+      for (const row of rows) {
+        const v = row[varName]
+        const key = isUserMissing(v, missingCodes) ? '(missing)' : String(v)
+        counts[key] = (counts[key] ?? 0) + 1
+      }
+      const total = Object.values(counts).reduce((a, b) => a + b, 0)
+      const categories = Object.keys(counts).filter((k) => k !== '(missing)')
+      const k = categories.length
+      if (k < 2 || total < 5)
+        return notApplicableResult('goodness', 'Chi-Square Goodness of Fit', `Need at least 2 categories and 5 observations; you have ${k} categories and N = ${total}.`)
+      const expected = total / k
+      let chi2 = 0
+      for (const cat of categories) {
+        const o = counts[cat] ?? 0
+        if (expected > 0) chi2 += (o - expected) ** 2 / expected
+      }
+      const df = k - 1
+      const p = chi2ToPValue(chi2, df)
+      const varLabel = getVar(varName)?.label ?? varName
+      const table: ResultRow[] = [
+        ...categories.map((cat) => ({
+          Category: cat,
+          Observed: counts[cat] ?? 0,
+          Expected: Math.round(expected * 100) / 100,
+          Percent: total ? Math.round(((counts[cat] ?? 0) / total) * 1000) / 10 : 0,
+        })),
+        { Statistic: 'Chi-Square', Value: Math.round(chi2 * 1000) / 1000 },
+        { Statistic: 'df', Value: df },
+        { Statistic: 'p-value (approx)', Value: p < 0.001 ? '< 0.001' : Math.round(p * 1000) / 1000 },
+      ]
+      const cramersV = total > 0 && k > 1 ? Math.sqrt(chi2 / (total * (k - 1))) : 0
+      if (cramersV > 0) table.push({ Statistic: "Cramér's V", Value: Math.round(cramersV * 1000) / 1000 })
+      const chart: ChartSpec = {
+        type: 'bar',
+        title: `Goodness of Fit: ${varLabel}`,
+        data: categories.map((cat) => ({ name: cat, value: counts[cat] ?? 0 })),
+        xKey: 'name',
+        yKey: 'value',
+      }
+      const insight = `Goodness of fit for "${varLabel}" (uniform expected): χ²(${df}) = ${chi2.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'Distribution differs significantly from uniform.' : 'Distribution is consistent with uniform.'}`
+      const plainLanguage = p < 0.05
+        ? `In practice: the categories of "${varLabel}" are not equally likely; the distribution differs from uniform.`
+        : `In practice: we don't have evidence that "${varLabel}" differs from a uniform distribution.`
+      const nextStep = p < 0.05 ? 'Next step: report χ² and p; describe which categories are over- or under-represented.' : 'Next step: you can report that the distribution is consistent with uniform.'
+      return {
+        testId: 'goodness',
+        testName: 'Chi-Square Goodness of Fit',
+        table,
+        chart,
+        insight,
+        keyStat: `χ² = ${chi2.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep,
+        variablesAnalyzed: [{ name: varName, label: varLabel, role: 'variable' }],
+        effectSize: cramersV,
+        effectSizeLabel: "Cramér's V",
+      }
+    }
+
+    case 'onesamplet': {
+      const varName = selectedVarNames?.[0] ?? scaleVars[0]?.name
+      if (!varName)
+        return notApplicableResult('onesamplet', 'One-sample t-test', 'Need one scale variable.', 'Set a variable to Scale.')
+      const vals = getNumericValues(rows, varName, getVar(varName)?.missingCodes ?? [])
+      const testValue = 0
+      if (vals.length < 2)
+        return notApplicableResult('onesamplet', 'One-sample t-test', `Need at least 2 observations; you have ${vals.length}.`)
+      const m = mean(vals)
+      const sd = standardDeviation(vals)
+      if (sd < 1e-10)
+        return notApplicableResult('onesamplet', 'One-sample t-test', 'Variable has zero variance.')
+      const t = (m - testValue) / (sd / Math.sqrt(vals.length))
+      const df = vals.length - 1
+      const p = tToPValue(t, df)
+      const cohensD = (m - testValue) / sd
+      const varLabel = getVar(varName)?.label ?? varName
+      const table: ResultRow[] = [
+        { Statistic: 'N', Value: vals.length },
+        { Statistic: 'Mean', Value: Math.round(m * 1000) / 1000 },
+        { Statistic: 'SD', Value: Math.round(sd * 1000) / 1000 },
+        { Statistic: 'Test value', Value: testValue },
+        { Statistic: 't', Value: Math.round(t * 1000) / 1000 },
+        { Statistic: 'df', Value: df },
+        { Statistic: 'p-value (approx)', Value: p < 0.001 ? '< 0.001' : Math.round(p * 1000) / 1000 },
+        { Statistic: "Cohen's d", Value: Math.round(cohensD * 1000) / 1000 },
+      ]
+      const insight = `One-sample t-test for "${varLabel}" (test value = ${testValue}): mean = ${m.toFixed(3)}, t(${df}) = ${t.toFixed(2)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${p < 0.05 ? 'Mean differs significantly from test value.' : 'No significant difference from test value.'}`
+      const plainLanguage = p < 0.05
+        ? `In practice: the mean of "${varLabel}" (${m.toFixed(2)}) differs significantly from ${testValue}.`
+        : `In practice: we don't see a significant difference between the mean of "${varLabel}" and ${testValue}.`
+      return {
+        testId: 'onesamplet',
+        testName: 'One-sample t-test',
+        table,
+        insight,
+        keyStat: `t = ${t.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep: p < 0.05 ? 'Next step: report mean, SD, t, df, and p.' : 'Next step: report that the mean does not differ significantly from the test value.',
+        variablesAnalyzed: [{ name: varName, label: varLabel, role: 'variable' }],
+        effectSize: Math.abs(cohensD),
+        effectSizeLabel: "Cohen's d",
+      }
+    }
+
+    case 'pointbiserial': {
+      const binaryName = selectedVarNames?.[0] ?? nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)?.name
+      const scaleName = selectedVarNames?.[1] ?? scaleVars[0]?.name
+      if (!binaryName || !scaleName)
+        return notApplicableResult('pointbiserial', 'Point-biserial correlation', 'Need one binary (nominal) and one scale variable.')
+      const missingB = getVar(binaryName)?.missingCodes ?? []
+      const missingS = getVar(scaleName)?.missingCodes ?? []
+      const xTrim: number[] = []
+      const yTrim: number[] = []
+      const binaryVals = getDistinctValues(rows, binaryName, missingB)
+      if (binaryVals.length !== 2)
+        return notApplicableResult('pointbiserial', 'Point-biserial correlation', 'Binary variable must have exactly two categories.')
+      const [code0, code1] = binaryVals.sort((a, b) => String(a).localeCompare(String(b)))
+      for (const row of rows) {
+        const b = row[binaryName]
+        const s = row[scaleName]
+        if (isUserMissing(b, missingB) || isUserMissing(s, missingS)) continue
+        const bn = b === code0 ? 0 : b === code1 ? 1 : NaN
+        const sn = Number(s)
+        if (!Number.isNaN(bn) && !Number.isNaN(sn)) {
+          xTrim.push(bn)
+          yTrim.push(sn)
+        }
+      }
+      if (xTrim.length < 3)
+        return notApplicableResult('pointbiserial', 'Point-biserial correlation', `Need at least 3 paired observations; you have ${xTrim.length}.`)
+      const r = sampleCorrelation(xTrim, yTrim)
+      const t = r * Math.sqrt((xTrim.length - 2) / (1 - r * r))
+      const p = tToPValue(t, xTrim.length - 2)
+      const bLabel = getVar(binaryName)?.label ?? binaryName
+      const sLabel = getVar(scaleName)?.label ?? scaleName
+      const table: ResultRow[] = [
+        { Statistic: 'Point-biserial r', Value: Math.round(r * 1000) / 1000 },
+        { Statistic: 'p-value (approx)', Value: p < 0.001 ? '< 0.001' : Math.round(p * 1000) / 1000 },
+        { Statistic: 'N (pairs)', Value: xTrim.length },
+      ]
+      const strength = Math.abs(r) < 0.3 ? 'weak' : Math.abs(r) < 0.5 ? 'moderate' : 'strong'
+      const insight = `Point-biserial correlation between "${bLabel}" and "${sLabel}": r = ${r.toFixed(3)}, p ${p < 0.05 ? '<' : '≥'} 0.05. ${strength} association. ${p < 0.05 ? 'Statistically significant.' : 'Not significant at α = 0.05.'}`
+      const plainLanguage = p < 0.05
+        ? `In practice: "${bLabel}" and "${sLabel}" are ${strength}ly associated (r = ${r.toFixed(2)}).`
+        : `In practice: we don't see a significant association between "${bLabel}" and "${sLabel}".`
+      return {
+        testId: 'pointbiserial',
+        testName: 'Point-biserial correlation',
+        table,
+        chart: {
+          type: 'scatter',
+          title: `${bLabel} vs ${sLabel}`,
+          data: xTrim.map((xi, i) => ({ x: xi, y: yTrim[i] })),
+          xKey: 'x',
+          yKey: 'y',
+        },
+        insight,
+        keyStat: `r = ${r.toFixed(3)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        plainLanguage,
+        nextStep: p < 0.05 ? 'Next step: report r and p; interpret as association between group and scale.' : 'Next step: you can report "no significant point-biserial correlation".',
+        variablesAnalyzed: [
+          { name: binaryName, label: bLabel, role: 'binary variable' },
+          { name: scaleName, label: sLabel, role: 'scale variable' },
+        ],
+        effectSize: Math.abs(r),
+        effectSizeLabel: 'r',
+      }
+    }
+
     default:
       return {
         testId,
         testName: String(testId),
-        table: [{ Note: 'This test is not yet implemented.', Implemented: 'freq, desc, missing, crosstab, corr, spearman, ttest, anova, linreg, logreg, mann, paired, pca' }],
+        table: [{ Note: 'This test is not yet implemented.', Implemented: 'freq, desc, missing, crosstab, corr, spearman, ttest, anova, linreg, logreg, mann, paired, pca, goodness, onesamplet, pointbiserial' }],
         insight: 'Not yet implemented. All Tier 1–3 tests and PCA are implemented.',
       }
   }

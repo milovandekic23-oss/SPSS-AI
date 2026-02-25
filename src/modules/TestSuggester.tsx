@@ -11,7 +11,7 @@ interface TestSuggesterProps {
 }
 
 const TIER1: TestId[] = ['freq', 'desc', 'missing']
-const TIER2: TestId[] = ['crosstab', 'corr', 'spearman', 'ttest', 'anova']
+const TIER2: TestId[] = ['crosstab', 'corr', 'spearman', 'ttest', 'anova', 'goodness', 'onesamplet', 'pointbiserial']
 const TIER3: TestId[] = ['linreg', 'logreg', 'mann', 'paired']
 const TIER4: TestId[] = ['pca']
 

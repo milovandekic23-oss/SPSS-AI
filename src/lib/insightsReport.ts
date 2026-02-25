@@ -16,6 +16,9 @@ const REPORT_TEST_ORDER: TestId[] = [
   'spearman',
   'ttest',
   'anova',
+  'goodness',
+  'onesamplet',
+  'pointbiserial',
   'linreg',
   'logreg',
   'mann',
@@ -24,7 +27,7 @@ const REPORT_TEST_ORDER: TestId[] = [
 ]
 
 const TIER1_IDS: TestId[] = ['freq', 'desc', 'missing']
-const BIVARIATE_IDS: TestId[] = ['crosstab', 'corr', 'spearman', 'ttest', 'anova']
+const BIVARIATE_IDS: TestId[] = ['crosstab', 'corr', 'spearman', 'ttest', 'anova', 'goodness', 'onesamplet', 'pointbiserial']
 
 /** Minimum variables required for a test to be worth running in the report */
 function hasEnoughVariables(testId: TestId, variableCount: number): boolean {
@@ -33,6 +36,7 @@ function hasEnoughVariables(testId: TestId, variableCount: number): boolean {
       return variableCount >= 2
     case 'corr':
     case 'spearman':
+    case 'pointbiserial':
       return variableCount >= 2
     case 'ttest':
     case 'anova':
@@ -45,6 +49,9 @@ function hasEnoughVariables(testId: TestId, variableCount: number): boolean {
       return variableCount >= 2
     case 'pca':
       return variableCount >= 2
+    case 'goodness':
+    case 'onesamplet':
+      return variableCount >= 1
     default:
       return variableCount >= 1
   }
@@ -60,26 +67,402 @@ export function isKeyFinding(result: TestResult): boolean {
   return hasSignificant && !hasNotSignificant
 }
 
-/** One finding in the report: result + validation. Only includes results from runTest (no fabrication). */
+/** One finding in the report: result + validation + engine output. */
 export interface ReportFinding {
   result: TestResult
   validation: ResultValidation
   isKey: boolean
+  interestScore: number
+  narrative: string
+  followUp: string | null
+  warnings: string[]
+}
+
+export interface ContradictionWarning {
+  message: string
+  involvedTests: TestId[]
+}
+
+export interface DataQualitySummary {
+  totalVariables: number
+  totalRows: number
+  highMissingnessVars: string[]
+  lowVarianceVars: string[]
+  smallSampleWarning: boolean
+  overallRating: 'good' | 'caution' | 'poor'
 }
 
 export interface InsightsReport {
   findings: ReportFinding[]
-  /** Short headlines for key findings only, in order */
   keyHeadlines: string[]
+  contradictions: ContradictionWarning[]
+  dataQuality: DataQualitySummary
+  generatedAt: string
 }
+
+// ─────────────────────────────────────────────
+// INTEREST SCORING
+// ─────────────────────────────────────────────
+
+function computeInterestScore(result: TestResult): number {
+  let score = 0
+  const insight = result.insight ?? ''
+  const isSignificant =
+    /statistically significant/i.test(insight) &&
+    !/not statistically significant|no significant/i.test(insight)
+  if (isSignificant) score += 3
+  const es = result.effectSize ?? null
+  const esLabel = result.effectSizeLabel ?? ''
+  if (es !== null) {
+    if (esLabel === "Cohen's d") {
+      if (Math.abs(es) >= 0.8) score += 5
+      else if (Math.abs(es) >= 0.5) score += 3
+      else if (Math.abs(es) >= 0.2) score += 1
+      else score -= 1
+    } else if (esLabel === 'r' || esLabel === 'ρ') {
+      if (Math.abs(es) >= 0.5) score += 5
+      else if (Math.abs(es) >= 0.3) score += 3
+      else if (Math.abs(es) >= 0.1) score += 1
+      else score -= 1
+    } else if (esLabel === 'R²') {
+      if (es >= 0.5) score += 5
+      else if (es >= 0.25) score += 3
+      else if (es >= 0.1) score += 1
+      else score -= 1
+    } else if (esLabel === "Cramér's V") {
+      if (es >= 0.3) score += 5
+      else if (es >= 0.1) score += 2
+      else score -= 1
+    } else if (esLabel === 'η²') {
+      if (es >= 0.14) score += 5
+      else if (es >= 0.06) score += 3
+      else if (es >= 0.01) score += 1
+      else score -= 1
+    }
+  }
+  if (TIER1_IDS.includes(result.testId)) score += 2
+  if (/30% missing|high missingness/i.test(insight)) score -= 3
+  if (/5% missing|some missing/i.test(insight)) score -= 1
+  if (!isSignificant && es === null && !TIER1_IDS.includes(result.testId)) score -= 2
+  return score
+}
+
+// ─────────────────────────────────────────────
+// EFFECT SIZE DESCRIPTION
+// ─────────────────────────────────────────────
+
+function describeEffectSize(es: number | null, label: string): string {
+  if (es === null) return ''
+  const magnitude = (() => {
+    if (label === "Cohen's d") {
+      if (Math.abs(es) >= 0.8) return 'large'
+      if (Math.abs(es) >= 0.5) return 'moderate'
+      if (Math.abs(es) >= 0.2) return 'small'
+      return 'negligible'
+    }
+    if (label === 'r' || label === 'ρ') {
+      if (Math.abs(es) >= 0.5) return 'strong'
+      if (Math.abs(es) >= 0.3) return 'moderate'
+      if (Math.abs(es) >= 0.1) return 'weak'
+      return 'negligible'
+    }
+    if (label === 'R²') {
+      if (es >= 0.5) return 'strong'
+      if (es >= 0.25) return 'moderate'
+      if (es >= 0.1) return 'weak'
+      return 'negligible'
+    }
+    if (label === "Cramér's V") {
+      if (es >= 0.3) return 'strong'
+      if (es >= 0.1) return 'moderate'
+      return 'weak'
+    }
+    if (label === 'η²') {
+      if (es >= 0.14) return 'large'
+      if (es >= 0.06) return 'moderate'
+      if (es >= 0.01) return 'small'
+      return 'negligible'
+    }
+    return ''
+  })()
+  if (!magnitude) return ''
+  return `${magnitude} (${label} = ${es.toFixed(3)})`
+}
+
+// ─────────────────────────────────────────────
+// NARRATIVE GENERATOR
+// ─────────────────────────────────────────────
+
+function generateNarrative(result: TestResult): string {
+  const { testId, insight, effectSize, effectSizeLabel } = result
+  const isSignificant =
+    /statistically significant/i.test(insight) &&
+    !/not statistically significant|no significant/i.test(insight)
+  const effectDesc = describeEffectSize(effectSize ?? null, effectSizeLabel ?? '')
+
+  switch (testId) {
+    case 'freq': {
+      const first = insight.split('.')[0] ?? insight
+      return `${first}. Check for categories with very low counts before running chi-square or regression.`
+    }
+    case 'desc':
+      return `${insight} Compare these means across groups using t-tests or ANOVA.`
+    case 'missing': {
+      if (/30% missing/i.test(insight))
+        return `${insight} Variables with >30% missing can bias analysis. Consider excluding or imputation.`
+      return `${insight} Report the effective N per test when using listwise deletion.`
+    }
+    case 'corr':
+    case 'spearman': {
+      const testLabel = testId === 'corr' ? 'Pearson r' : 'Spearman ρ'
+      if (isSignificant) {
+        const dir = /negative/i.test(insight) ? 'negatively' : 'positively'
+        return `The two variables are ${dir} and ${effectDesc} correlated (${testLabel}). ${
+          effectSize != null && Math.abs(effectSize) > 0.5
+            ? 'Strong relationship — consider regression to understand causality.'
+            : 'Consider regression to see whether one predicts the other.'
+        }`
+      }
+      return `No significant linear association (${testLabel}). Check the scatter plot for non-linear patterns.`
+    }
+    case 'ttest': {
+      if (isSignificant) {
+        return `The groups differ ${effectDesc} (Cohen's d). ${
+          effectSize != null && Math.abs(effectSize) >= 0.8
+            ? 'Large effect — practically meaningful.'
+            : effectSize != null && Math.abs(effectSize) >= 0.5
+              ? 'Moderate effect — report both p and Cohen\'s d.'
+              : 'Effect size is small; report both p and d.'
+        } Prefer Welch t if Levene p < 0.05.`
+      }
+      return `No significant difference between groups (t-test). ${
+        effectSize != null && Math.abs(effectSize) > 0.2
+          ? 'Small trend — consider statistical power.'
+          : 'Groups are similar on this outcome.'
+      }`
+    }
+    case 'anova': {
+      if (isSignificant) {
+        return `At least one group mean differs significantly (ANOVA). ${effectDesc} effect (η²). Use Tukey HSD rows to identify which pairs differ.`
+      }
+      return `No significant difference between group means (ANOVA). ${
+        effectSize != null && effectSize > 0.06 ? 'Eta-squared suggests a trend — check power.' : 'Effect size is small.'
+      }`
+    }
+    case 'crosstab': {
+      if (isSignificant) {
+        return `The two variables are associated (chi-square significant). ${effectDesc} (Cramér's V). ${
+          effectSize != null && effectSize >= 0.3
+            ? 'Strong association — examine crosstab percentages.'
+            : 'Check crosstab percentages to describe the pattern.'
+        } If any expected count < 5, consider Fisher's exact or collapsing categories.`
+      }
+      return `No significant association (chi-square). ${
+        effectSize != null && effectSize > 0.1 ? 'Small trend in Cramér\'s V.' : 'Variables appear independent.'
+      }`
+    }
+    case 'goodness':
+      return insight
+    case 'onesamplet':
+      return insight
+    case 'pointbiserial': {
+      if (isSignificant) {
+        return `Binary and scale variables are ${effectDesc} associated (point-biserial r). Same interpretation as a t-test with 0/1 coding.`
+      }
+      return `No significant association between the binary and scale variable (point-biserial r).`
+    }
+    case 'linreg': {
+      if (isSignificant) {
+        const pct = effectSize != null ? Math.round(effectSize * 100) : null
+        return `The regression model is significant. ${
+          pct != null ? `Predictors explain ${pct}% of variance (R² = ${effectSize?.toFixed(3)}).` : ''
+        } ${
+          effectSize != null && effectSize >= 0.5 ? 'Strong explanatory power.' : 'Check whether important predictors are missing.'
+        } Check the coefficient table for individual significance.`
+      }
+      return `The overall regression is not significant. Check individual predictor p-values.`
+    }
+    case 'logreg':
+      return `${insight} Focus on odds ratios and p < 0.05. Ensure ≥10 events per predictor for stable estimates.`
+    case 'mann': {
+      if (isSignificant) return `Groups differ significantly (non-parametric). Report medians alongside the test statistic.`
+      return `No significant difference in distribution (non-parametric). Check sample size for power.`
+    }
+    case 'paired': {
+      if (isSignificant) return `Significant change between measurements (paired t-test). Report mean difference and 95% CI.`
+      return `No significant average change (paired t-test). Consider timing or sample size.`
+    }
+    case 'pca': {
+      const cum = insight.match(/First (\d+) component/)?.[1]
+      return cum
+        ? `The first ${cum} component(s) capture most variance. Use eigenvalue > 1 or scree plot to retain components.`
+        : 'Variance spread across components. Use loadings to interpret each component.'
+    }
+    default:
+      return insight
+  }
+}
+
+// ─────────────────────────────────────────────
+// FOLLOW-UP SUGGESTIONS
+// ─────────────────────────────────────────────
+
+function generateFollowUp(result: TestResult): string | null {
+  const { testId, insight } = result
+  const isSignificant =
+    /statistically significant/i.test(insight) &&
+    !/not statistically significant|no significant/i.test(insight)
+  switch (testId) {
+    case 'freq':
+      return 'Run Crosstabulation to test whether category distributions differ across groups.'
+    case 'desc':
+      return 'Run a t-test or ANOVA to compare these means between groups.'
+    case 'missing':
+      return insight.includes('30% missing') ? 'Consider excluding high-missingness variables or imputation.' : null
+    case 'corr':
+    case 'spearman':
+      return isSignificant ? 'Run Linear Regression to quantify how well one variable predicts the other.' : 'Try a scatter plot to check for non-linear patterns.'
+    case 'ttest':
+      return isSignificant ? 'Run Linear Regression to control for covariates and see if the group difference holds.' : 'Run Mann-Whitney U if normality is in doubt.'
+    case 'anova':
+      return isSignificant ? 'Check Tukey HSD rows in the table to identify which group pairs differ.' : 'Run Kruskal-Wallis if normality is violated.'
+    case 'crosstab':
+      return isSignificant ? 'Examine row/column percentages to describe the direction of the association.' : null
+    case 'goodness':
+      return 'For two categorical variables use Crosstabulation and Chi-Square test of independence.'
+    case 'onesamplet':
+      return 'Compare to a known value or run independent-samples t-test if you have two groups.'
+    case 'pointbiserial':
+      return isSignificant ? 'Run Independent-samples t-test for group means and Cohen\'s d.' : null
+    case 'linreg':
+      return isSignificant ? 'Check residual plots for non-linearity or heteroscedasticity.' : 'Try adding/removing predictors or transforming variables.'
+    case 'logreg':
+      return 'Report Nagelkerke R² and classification table to assess model fit.'
+    case 'mann':
+      return isSignificant ? 'Report medians and IQRs per group.' : null
+    case 'paired':
+      return isSignificant ? 'Compute 95% CI for the mean difference.' : null
+    case 'pca':
+      return 'Examine component loadings to label each component.'
+    default:
+      return result.nextStep?.replace(/^Next step:\s*/i, '') ?? null
+  }
+}
+
+// ─────────────────────────────────────────────
+// CONTRADICTION DETECTION
+// ─────────────────────────────────────────────
+
+function detectContradictions(findings: ReportFinding[]): ContradictionWarning[] {
+  const warnings: ContradictionWarning[] = []
+  const resultMap = new Map<TestId, TestResult>()
+  for (const f of findings) resultMap.set(f.result.testId, f.result)
+
+  const corrResult = resultMap.get('corr')
+  const ttestResult = resultMap.get('ttest')
+  const spearmanResult = resultMap.get('spearman')
+  if (corrResult && ttestResult) {
+    const corrSig = /statistically significant/i.test(corrResult.insight) && !/not statistically significant/i.test(corrResult.insight)
+    const ttestNotSig = /not statistically significant|no significant/i.test(ttestResult.insight)
+    if (corrSig && ttestNotSig) {
+      warnings.push({
+        message: 'Pearson correlation is significant but the t-test is not. The continuous relationship may be stronger than the binary group split suggests. Check sample sizes per group.',
+        involvedTests: ['corr', 'ttest'],
+      })
+    }
+  }
+  if (corrResult && spearmanResult) {
+    const corrSig = /statistically significant/i.test(corrResult.insight) && !/not statistically significant/i.test(corrResult.insight)
+    const spearNotSig = /not statistically significant|no significant/i.test(spearmanResult.insight)
+    if (corrSig && spearNotSig) {
+      warnings.push({
+        message: 'Pearson is significant but Spearman is not. Pearson may be driven by outliers or non-monotonic relationship. Check the scatter plot.',
+        involvedTests: ['corr', 'spearman'],
+      })
+    }
+  }
+  const mannResult = resultMap.get('mann')
+  if (ttestResult && mannResult) {
+    const ttestSig = /statistically significant/i.test(ttestResult.insight) && !/not statistically significant/i.test(ttestResult.insight)
+    const mannNotSig = /not statistically significant|no significant/i.test(mannResult.insight)
+    const mannSig = /statistically significant/i.test(mannResult.insight) && !/not statistically significant/i.test(mannResult.insight)
+    const ttestNotSig = /not statistically significant|no significant/i.test(ttestResult.insight)
+    if (ttestSig && mannNotSig) {
+      warnings.push({
+        message: 't-test is significant but Mann-Whitney is not. The t-test may be sensitive to non-normality or outliers. Prefer Mann-Whitney if normality is in doubt.',
+        involvedTests: ['ttest', 'mann'],
+      })
+    }
+    if (mannSig && ttestNotSig) {
+      warnings.push({
+        message: 'Mann-Whitney is significant but t-test is not. Non-parametric test detected a rank-based difference. Check group sizes and distributions.',
+        involvedTests: ['ttest', 'mann'],
+      })
+    }
+  }
+  const linregResult = resultMap.get('linreg')
+  if (linregResult && corrResult) {
+    const linregSig = /model is significant|significant|at least one predictor/i.test(linregResult.insight)
+    const corrNotSig = /not statistically significant/i.test(corrResult.insight)
+    if (linregSig && corrNotSig && (linregResult.effectSize ?? 0) > 0.3) {
+      warnings.push({
+        message: 'Regression is significant with moderate/high R² but bivariate correlation is not. Predictors may explain outcome jointly. Examine individual coefficients.',
+        involvedTests: ['linreg', 'corr'],
+      })
+    }
+  }
+  return warnings
+}
+
+// ─────────────────────────────────────────────
+// DATA QUALITY SUMMARY
+// ─────────────────────────────────────────────
+
+function buildDataQualitySummary(dataset: DatasetState): DataQualitySummary {
+  const { variables, rows } = dataset
+  const n = rows.length
+  const highMissingnessVars = variables.filter((v) => v.missingPct > 20).map((v) => v.label)
+  const lowVarianceVars = variables
+    .filter((v) => {
+      if (v.measurementLevel === 'scale') return false
+      const counts: Record<string, number> = {}
+      let total = 0
+      for (const row of rows) {
+        const val = row[v.name]
+        if (val == null || val === '') continue
+        const k = String(val)
+        counts[k] = (counts[k] ?? 0) + 1
+        total++
+      }
+      if (total === 0) return false
+      const maxShare = Math.max(...Object.values(counts)) / total
+      return maxShare > 0.9
+    })
+    .map((v) => v.label)
+  const smallSampleWarning = n < 30
+  let overallRating: DataQualitySummary['overallRating'] = 'good'
+  if (highMissingnessVars.length > 0 || smallSampleWarning) overallRating = 'caution'
+  if (highMissingnessVars.length > variables.length / 3 || n < 10) overallRating = 'poor'
+  return {
+    totalVariables: variables.length,
+    totalRows: n,
+    highMissingnessVars,
+    lowVarianceVars,
+    smallSampleWarning,
+    overallRating,
+  }
+}
+
+// ─────────────────────────────────────────────
+// MAIN REPORT RUNNER
+// ─────────────────────────────────────────────
 
 /**
  * Run applicable tests in tier order, validate each result, and build the report.
  * All insights are derived from computed results only.
  */
 export function runInsightsReport(dataset: DatasetState): InsightsReport {
-  const findings: ReportFinding[] = []
-  const keyHeadlines: string[] = []
+  const rawFindings: ReportFinding[] = []
 
   for (const testId of REPORT_TEST_ORDER) {
     const suggested = getSuggestedVariables(testId, dataset)
@@ -90,22 +473,40 @@ export function runInsightsReport(dataset: DatasetState): InsightsReport {
 
     const validation = validateTestResult(result)
     const isKey = isKeyFinding(result)
-    findings.push({ result, validation, isKey })
-    if (isKey) keyHeadlines.push(getHeadline(result))
+    const interestScore = computeInterestScore(result)
+    const narrative = generateNarrative(result)
+    const followUp = generateFollowUp(result)
+    const warnings: string[] = []
+    if (!validation.consistent) warnings.push(...validation.issues)
+    const vars = result.variablesAnalyzed ?? []
+    for (const v of vars) {
+      const meta = dataset.variables.find((dv) => dv.name === v.name)
+      if (meta && meta.missingPct > 20) {
+        warnings.push(`"${meta.label}" has ${meta.missingPct}% missing — treat this result with caution.`)
+      }
+    }
+    rawFindings.push({ result, validation, isKey, interestScore, narrative, followUp, warnings })
   }
 
-  const tier1 = findings.filter((f) => TIER1_IDS.includes(f.result.testId))
-  const bivariate = findings.filter((f) => BIVARIATE_IDS.includes(f.result.testId))
-  const rest = findings.filter((f) => !TIER1_IDS.includes(f.result.testId) && !BIVARIATE_IDS.includes(f.result.testId))
-  bivariate.sort((a, b) => {
-    const ea = a.result.effectSize ?? -1
-    const eb = b.result.effectSize ?? -1
-    return eb - ea
-  })
-  const sortedFindings = [...tier1, ...bivariate, ...rest]
-  const sortedKeyHeadlines = sortedFindings.filter((f) => f.isKey).map((f) => getHeadline(f.result))
+  const tier1 = rawFindings.filter((f) => TIER1_IDS.includes(f.result.testId))
+  const bivariate = rawFindings
+    .filter((f) => BIVARIATE_IDS.includes(f.result.testId))
+    .sort((a, b) => b.interestScore - a.interestScore)
+  const rest = rawFindings
+    .filter((f) => !TIER1_IDS.includes(f.result.testId) && !BIVARIATE_IDS.includes(f.result.testId))
+    .sort((a, b) => b.interestScore - a.interestScore)
+  const findings = [...tier1, ...bivariate, ...rest]
+  const keyHeadlines = findings.filter((f) => f.isKey).map((f) => getHeadline(f.result))
+  const contradictions = detectContradictions(findings)
+  const dataQuality = buildDataQualitySummary(dataset)
 
-  return { findings: sortedFindings, keyHeadlines: sortedKeyHeadlines }
+  return {
+    findings,
+    keyHeadlines,
+    contradictions,
+    dataQuality,
+    generatedAt: new Date().toLocaleString(),
+  }
 }
 
 /** One-line headline for a result (for key findings list and expandable summary). Prefer context + takeaway. */
