@@ -141,12 +141,24 @@ function TestCard({
       <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
         <strong>Applies to:</strong> {guidance.forLevels}
       </div>
-      <div style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
-        <strong>Analyzes:</strong>{' '}
-        {hasVars
-          ? suggested.variables.map((v) => `${v.label} (${v.role})`).join('; ')
-          : 'No matching variables in your data — run anyway to see requirements.'}
-      </div>
+      <details style={{ fontSize: 13, color: '#2c3e50', marginBottom: 6 }}>
+        <summary style={{ cursor: 'pointer', listStyle: 'none' }}>
+          <strong>Analyzes:</strong>{' '}
+          {hasVars
+            ? `${suggested.variables.length} variable${suggested.variables.length === 1 ? '' : 's'} — click to expand`
+            : 'No matching variables — run anyway to see requirements'}
+        </summary>
+        {hasVars && (
+          <ul style={{ margin: '6px 0 0 16px', paddingLeft: 8 }}>
+            {suggested.variables.map((v, i) => (
+              <li key={`${v.name}-${v.role}-${i}`} style={{ marginBottom: 4 }}>
+                <span style={{ fontWeight: 500 }}>{v.label}</span>
+                <span style={{ color: '#6c757d', fontSize: 12 }}> ({v.role})</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
       <div style={{ fontSize: 12, marginBottom: 8 }} data-testid={`supervisor-${testId}`}>
         <strong>Supervisor:</strong>{' '}
         {choiceValidation.valid ? (

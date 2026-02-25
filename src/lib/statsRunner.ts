@@ -108,6 +108,8 @@ export interface ChartSpec {
   data: Record<string, string | number>[]
   xKey: string
   yKey?: string
+  /** If set, chart data includes this key (e.g. percent) and UI can toggle count vs percent */
+  percentKey?: string
   seriesKeys?: string[]
 }
 
@@ -119,6 +121,8 @@ export interface TestResult {
   insight: string
   /** e.g. p-value, r, t, etc. */
   keyStat?: string
+  /** Variables/questions analyzed (for clear display in result panel) */
+  variablesAnalyzed?: { label: string; role?: string }[]
 }
 
 function getNumericValues(rows: DataRow[], varName: string): number[] {
@@ -382,18 +386,31 @@ export function runTest(
         Count: count,
         Percent: total ? Math.round((count / total) * 1000) / 10 : 0,
       }))
+      const varLabel = getVar(varName)?.label ?? varName
       const chart: ChartSpec = {
         type: 'bar',
-        title: `Distribution of ${getVar(varName)?.label ?? varName}`,
-        data: table.map((r) => ({ name: String(r.Value), value: Number(r.Count) })),
+        title: `Distribution of ${varLabel}`,
+        data: table.map((r) => ({
+          name: String(r.Value),
+          value: Number(r.Count),
+          percent: total ? Math.round((Number(r.Count) / total) * 1000) / 10 : 0,
+        })),
         xKey: 'name',
         yKey: 'value',
+        percentKey: 'percent',
       }
       const insight =
         total > 0
-          ? `Frequencies for "${getVar(varName)?.label ?? varName}": ${table.length} categories. ${table.slice(0, 3).map((r) => `${r.Value}: ${r.Count} (${r.Percent}%)`).join('; ')}${table.length > 3 ? '…' : ''}.`
+          ? `Frequencies for "${varLabel}": ${table.length} categories. ${table.slice(0, 3).map((r) => `${r.Value}: ${r.Count} (${r.Percent}%)`).join('; ')}${table.length > 3 ? '…' : ''}.`
           : 'No data for this variable.'
-      return { testId, testName: 'Frequencies & percentages', table, chart, insight }
+      return {
+        testId,
+        testName: 'Frequencies & percentages',
+        table,
+        chart,
+        insight,
+        variablesAnalyzed: [{ label: varLabel, role: 'variable' }],
+      }
     }
 
     case 'desc': {
@@ -433,7 +450,14 @@ export function runTest(
         table.length > 0
           ? `Descriptive statistics for ${table.length} variable(s). Sample sizes range from ${Math.min(...table.map((r) => Number(r.N)))} to ${Math.max(...table.map((r) => Number(r.N)))}. Use these to summarize central tendency and spread before running inferential tests.`
           : 'No scale variables to summarize.'
-      return { testId, testName: 'Mean, SD, Min, Max', table, chart, insight }
+      return {
+        testId,
+        testName: 'Mean, SD, Min, Max',
+        table,
+        chart,
+        insight,
+        variablesAnalyzed: toUse.map((name) => ({ label: getVar(name)?.label ?? name, role: 'variable' })),
+      }
     }
 
     case 'missing': {
@@ -549,6 +573,10 @@ export function runTest(
         chart,
         insight,
         keyStat: `χ² = ${chiSq.toFixed(2)}, df = ${df}`,
+        variablesAnalyzed: [
+          { label: getVar(rowVar)?.label ?? rowVar, role: 'row variable' },
+          { label: getVar(colVar)?.label ?? colVar, role: 'column variable' },
+        ],
       }
     }
 
@@ -603,6 +631,10 @@ export function runTest(
         chart,
         insight,
         keyStat: `r = ${r.toFixed(3)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        variablesAnalyzed: [
+          { label: getVar(v1)?.label ?? v1, role: 'variable 1' },
+          { label: getVar(v2)?.label ?? v2, role: 'variable 2' },
+        ],
       }
     }
 
@@ -731,6 +763,10 @@ export function runTest(
         chart,
         insight,
         keyStat: `t = ${t.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        variablesAnalyzed: [
+          { label: getVar(outcomeName)?.label ?? outcomeName, role: 'outcome' },
+          { label: getVar(groupName)?.label ?? groupName, role: 'group' },
+        ],
       }
     }
 
@@ -829,6 +865,10 @@ export function runTest(
         chart,
         insight,
         keyStat: `F = ${F.toFixed(2)}, p ${p < 0.05 ? '< 0.05' : '≥ 0.05'}`,
+        variablesAnalyzed: [
+          { label: getVar(outcomeName)?.label ?? outcomeName, role: 'outcome' },
+          { label: getVar(groupName)?.label ?? groupName, role: 'group' },
+        ],
       }
     }
 
