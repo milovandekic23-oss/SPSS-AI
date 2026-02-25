@@ -57,7 +57,7 @@ const COLUMN_TOOLTIPS: Record<string, string> = {
   Role: 'Use the dropdown to set role: Input, Target, or ID. Some analyses use this to pick outcome vs predictor variables.',
   'Missing %': 'Shows the share of empty or missing values (and any codes you define below). High missingness may bias results.',
   'Missing codes': 'Define values that count as missing (e.g. 99, 999, -1 or "Refused"). Comma-separated. These are excluded from all analyses.',
-  'Values': 'Value labels: map each code to a display label (e.g. 1 = Strongly disagree). Used in reports. Edit or add code = label pairs.',
+  'Value labels': 'Map each code to a display label (e.g. 1 = Strongly disagree, 5 = Strongly agree). Click "Add value labels…" to edit; used in frequency tables and reports.',
   'Question group': 'Use the dropdown to assign this variable to a question group (e.g. checkbox set, matrix). Create groups in the "Question groups" section below, then select one here.',
   'In analysis': 'Leave checked to include this variable in test suggestions and analyses. Uncheck to hide it from analyses (variable stays in the table).',
 }
@@ -137,25 +137,37 @@ function ValueLabelsCell({ variable, onUpdate }: { variable: VariableMeta; onUpd
     },
     [labels, onUpdate]
   )
+  const preview = labels.length > 0
+    ? labels.slice(0, 2).map((l) => `${l.code} = ${l.label || '…'}`).join('; ') + (labels.length > 2 ? ` (+${labels.length - 2})` : '')
+    : ''
   return (
-    <div style={{ minWidth: 120 }}>
+    <div style={{ minWidth: 140 }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         style={{
-          background: 'none',
-          border: 'none',
+          background: open ? theme.colors.background : 'none',
+          border: `1px solid ${open ? theme.colors.border : 'transparent'}`,
+          borderRadius: 4,
           cursor: 'pointer',
           fontSize: 12,
-          padding: 0,
+          padding: '4px 8px',
           color: theme.colors.accent,
           textDecoration: 'underline',
+          textAlign: 'left',
+          width: '100%',
         }}
+        title="Click to add or edit value labels (e.g. 1 = Strongly disagree)"
       >
-        {labels.length} label{labels.length !== 1 ? 's' : ''}
+        {labels.length === 0
+          ? 'Add value labels…'
+          : open
+            ? `${labels.length} label${labels.length !== 1 ? 's' : ''} (click to close)`
+            : preview || `${labels.length} label${labels.length !== 1 ? 's' : ''}`}
       </button>
       {open && (
         <div style={{ marginTop: 6, padding: 8, background: theme.colors.background, border: `1px solid ${theme.colors.border}`, borderRadius: 4 }}>
+          <div style={{ fontSize: 11, color: '#6c757d', marginBottom: 6 }}>Code = label (e.g. 1 = Strongly disagree)</div>
           {labels.map((l, idx) => (
             <div key={idx} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
               <input
@@ -174,7 +186,7 @@ function ValueLabelsCell({ variable, onUpdate }: { variable: VariableMeta; onUpd
               <button type="button" onClick={() => removeLabel(idx)} style={{ padding: '2px 6px', fontSize: 11, cursor: 'pointer' }} aria-label="Remove">×</button>
             </div>
           ))}
-          <button type="button" onClick={addLabel} style={{ marginTop: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}>+ Add</button>
+          <button type="button" onClick={addLabel} style={{ marginTop: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}>+ Add row</button>
         </div>
       )}
     </div>
@@ -426,7 +438,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
               <ColHeader title="Role" />
               <ColHeader title="Missing %" />
               <ColHeader title="Missing codes" />
-              <ColHeader title="Values" />
+              <ColHeader title="Value labels" />
               <ColHeader title="Question group" />
               <ColHeader title="In analysis" />
             </tr>
@@ -518,7 +530,7 @@ export function VariableView({ dataset, onDatasetChange }: VariableViewProps) {
                     title="Comma-separated values to treat as missing"
                   />
                 </td>
-                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Values']}>
+                <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Value labels']}>
                   <ValueLabelsCell variable={v} onUpdate={(patch) => updateVariable(i, patch)} />
                 </td>
                 <td style={styles.tableCell} title={COLUMN_TOOLTIPS['Question group']}>
