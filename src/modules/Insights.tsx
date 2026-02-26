@@ -390,20 +390,30 @@ function ReportView({
         <div style={{ marginBottom: 28 }}>
           <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Key findings</h3>
           <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6, ...styles.textBody }}>
-            {keyFindings.map((f, i) => (
-              <li key={i} style={{ marginBottom: 6 }}>
-                {f.validation.consistent ? (
-                  <span>{getHeadline(f.result)}</span>
-                ) : (
-                  <span>
-                    {getHeadline(f.result)}
-                    <span style={{ color: '#e67e22', fontSize: 12, marginLeft: 6 }}>
-                      (Check details: {f.validation.issues.join('; ')})
+            {keyFindings.map((f, i) => {
+              const freqFindings = report.findings.filter((x) => x.result.testId === 'freq')
+              const questionNumber =
+                f.result.testId === 'freq' ? freqFindings.indexOf(f) + 1 : undefined
+              const questionLabel = f.result.testId === 'freq' && f.result.variablesAnalyzed?.[0]?.label
+              const displayHeadline =
+                questionNumber != null && questionLabel
+                  ? `${questionNumber}. ${questionLabel}`
+                  : getHeadline(f.result)
+              return (
+                <li key={i} style={{ marginBottom: 6 }}>
+                  {f.validation.consistent ? (
+                    <span>{displayHeadline}</span>
+                  ) : (
+                    <span>
+                      {displayHeadline}
+                      <span style={{ color: '#e67e22', fontSize: 12, marginLeft: 6 }}>
+                        (Check details: {f.validation.issues.join('; ')})
+                      </span>
                     </span>
-                  </span>
-                )}
-              </li>
-            ))}
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}
@@ -413,9 +423,25 @@ function ReportView({
         Expand any section to see the narrative, table, chart, and follow-up suggestion.
       </p>
 
-      {report.findings.map((finding, index) => (
-        <FindingBlock key={index} finding={finding} dataset={dataset} apiKey={apiKey} />
-      ))}
+      {report.findings.map((finding, index) => {
+        const freqFindings = report.findings.filter((f) => f.result.testId === 'freq')
+        const questionNumber =
+          finding.result.testId === 'freq'
+            ? freqFindings.indexOf(finding) + 1
+            : undefined
+        const questionLabel =
+          finding.result.testId === 'freq' && finding.result.variablesAnalyzed?.[0]?.label
+        return (
+          <FindingBlock
+            key={index}
+            finding={finding}
+            dataset={dataset}
+            apiKey={apiKey}
+            questionNumber={questionNumber}
+            questionLabel={questionLabel}
+          />
+        )
+      })}
 
       <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button
@@ -493,10 +519,14 @@ function FindingBlock({
   finding,
   dataset,
   apiKey,
+  questionNumber,
+  questionLabel,
 }: {
   finding: ReportFinding
   dataset: DatasetState
   apiKey: string
+  questionNumber?: number
+  questionLabel?: string
 }) {
   const { result, validation, narrative, followUp, warnings, interestScore } = finding
   const [aiInterpretation, setAiInterpretation] = useState<string | null>(null)
@@ -543,7 +573,8 @@ function FindingBlock({
         }}
       >
         <span>
-          <span style={{ marginRight: 8 }}>▸</span> {summaryLabel}
+          <span style={{ marginRight: 8 }}>▸</span>{' '}
+          {questionNumber != null ? `${questionNumber}. ${questionLabel ?? headline}` : summaryLabel}
         </span>
         {interestScore >= 5 && (
           <span

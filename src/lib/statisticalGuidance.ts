@@ -161,6 +161,15 @@ export const TEST_GUIDANCE: Record<TestId, TestGuidance> = {
     alternatives: 'Equivalent to independent-samples t-test; use t-test for group means and Cohen’s d.',
     forLevels: 'Binary × Scale',
   },
+  pivot: {
+    id: 'pivot',
+    name: 'Custom pivot / Cross-tab',
+    summary: 'Cross-examine how segments rate questions. Choose one segment variable (e.g. department) and one or more variables to compare (e.g. satisfaction). Shown in percentages (nominal) or means (scale).',
+    whenToUse: 'Use when you want to compare groups (e.g. departments, regions) on one or more questions (e.g. satisfaction, ratings). Rows = segment; values = % or mean.',
+    assumptions: 'Segment variable should be nominal or ordinal. Outcome variables can be nominal, ordinal, or scale.',
+    alternatives: 'For two categorical variables only, use Crosstabulation & Chi-Square. For one outcome by one group, use t-test or ANOVA.',
+    forLevels: 'Segment (nominal/ordinal) × Variables to compare (any)',
+  },
 }
 
 export function getTestGuidance(testId: TestId): TestGuidance {

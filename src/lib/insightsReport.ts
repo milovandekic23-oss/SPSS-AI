@@ -463,8 +463,31 @@ function buildDataQualitySummary(dataset: DatasetState): DataQualitySummary {
  */
 export function runInsightsReport(dataset: DatasetState): InsightsReport {
   const rawFindings: ReportFinding[] = []
+  const includedVars = dataset.variables.filter((v) => v.includeInAnalysis !== false)
+  const categoricalVars = includedVars.filter((v) => v.measurementLevel === 'nominal' || v.measurementLevel === 'ordinal')
 
   for (const testId of REPORT_TEST_ORDER) {
+    if (testId === 'freq') {
+      // Run frequencies for every categorical (nominal/ordinal) variable — one finding per question
+      for (const v of categoricalVars) {
+        const result = runTest('freq', dataset, [v.name])
+        if (!result) continue
+        const validation = validateTestResult(result)
+        const isKey = isKeyFinding(result)
+        const interestScore = computeInterestScore(result)
+        const narrative = generateNarrative(result)
+        const followUp = generateFollowUp(result)
+        const warnings: string[] = []
+        if (!validation.consistent) warnings.push(...validation.issues)
+        const meta = dataset.variables.find((dv) => dv.name === v.name)
+        if (meta && meta.missingPct > 20) {
+          warnings.push(`"${meta.label}" has ${meta.missingPct}% missing — treat this result with caution.`)
+        }
+        rawFindings.push({ result, validation, isKey, interestScore, narrative, followUp, warnings })
+      }
+      continue
+    }
+
     const suggested = getSuggestedVariables(testId, dataset)
     if (!hasEnoughVariables(testId, suggested.variables.length)) continue
 

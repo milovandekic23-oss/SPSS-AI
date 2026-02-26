@@ -92,6 +92,7 @@ export type TestId =
   | 'goodness'
   | 'onesamplet'
   | 'pointbiserial'
+  | 'pivot'
 
 /** Suggested variables for a test: what will be analyzed and how */
 export interface SuggestedVars {
@@ -482,6 +483,15 @@ export function getSuggestedVariables(testId: TestId, dataset: DatasetState): Su
           ...(nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2) ? [{ name: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.name, label: nominalVars.find((v) => getDistinctValues(rows, v.name, v.missingCodes ?? []).length === 2)!.label, role: 'binary variable' }] : []),
           ...scaleVars.slice(0, 2).map((v) => ({ name: v.name, label: v.label, role: 'scale variable' })),
         ].filter((x, i, a) => a.findIndex((y) => y.name === x.name) === i),
+      }
+    case 'pivot':
+      return {
+        testId: 'pivot',
+        description: 'Custom pivot: cross-examine how segments rate questions. Segment by one variable, compare one or more questions. Shown in percentages (or means for scale).',
+        variables: [
+          ...categoricalVars.slice(0, 1).map((v) => ({ name: v.name, label: v.label, role: 'segment (rows)' })),
+          ...[...categoricalVars, ...scaleVars].slice(0, 6).map((v) => ({ name: v.name, label: v.label, role: 'variable to compare' })),
+        ],
       }
     default:
       return {
@@ -1831,11 +1841,93 @@ export function runTest(
       }
     }
 
+    case 'pivot': {
+      const segmentVar = selectedVarNames?.[0]
+      const outcomeVars = selectedVarNames?.slice(1) ?? []
+      if (!segmentVar || outcomeVars.length === 0) {
+        return notApplicableResult(
+          'pivot',
+          'Custom pivot',
+          'Select one segment variable (e.g. department) and at least one variable to compare (e.g. satisfaction).',
+          'Use the Custom pivot card in Test Suggester to choose segment and variables.'
+        )
+      }
+      const segmentMeta = getVar(segmentVar)
+      const segmentLevels = getDistinctValues(rows, segmentVar, segmentMeta?.missingCodes ?? []).sort((a, b) => String(a).localeCompare(String(b)))
+      if (segmentLevels.length === 0) {
+        return notApplicableResult('pivot', 'Custom pivot', 'Segment variable has no valid values.')
+      }
+      const segmentLabel = segmentMeta?.label ?? segmentVar
+      const table: ResultRow[] = []
+      const variablesAnalyzed: { name?: string; label: string; role?: string }[] = [
+        { name: segmentVar, label: segmentLabel, role: 'segment' },
+        ...outcomeVars.map((name) => ({ name, label: getVar(name)?.label ?? name, role: 'compare' })),
+      ]
+      for (const segVal of segmentLevels) {
+        const segmentRows = rows.filter((r) => {
+          const v = r[segmentVar]
+          if (v == null || v === '') return false
+          const codes = segmentMeta?.missingCodes ?? []
+          if (codes.length && isUserMissing(v, codes)) return false
+          return String(v) === String(segVal)
+        })
+        const row: ResultRow = { Segment: String(segVal), 'Segment (n)': segmentRows.length }
+        for (const outName of outcomeVars) {
+          const outMeta = getVar(outName)
+          const missingCodes = outMeta?.missingCodes ?? []
+          const isScale = outMeta?.measurementLevel === 'scale'
+          if (isScale) {
+            const vals = segmentRows
+              .map((r) => r[outName])
+              .filter((v) => !isUserMissing(v, missingCodes))
+              .map((v) => Number(v))
+              .filter((n) => !Number.isNaN(n))
+            const meanVal = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+            row[`${outMeta?.label ?? outName} (Mean)`] = meanVal != null ? Math.round(meanVal * 1000) / 1000 : '—'
+          } else {
+            const cats = getDistinctValues(segmentRows, outName, missingCodes).sort((a, b) => String(a).localeCompare(String(b)))
+            const total = segmentRows.filter((r) => !isUserMissing(r[outName], missingCodes)).length
+            for (const cat of cats) {
+              const count = segmentRows.filter((r) => {
+                const v = r[outName]
+                if (isUserMissing(v, missingCodes)) return false
+                return String(v) === String(cat)
+              }).length
+              const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0
+              row[`${outMeta?.label ?? outName}: ${String(cat)}`] = `${pct}%`
+            }
+          }
+        }
+        table.push(row)
+      }
+      const insight = `Pivot: how "${segmentLabel}" segments compare on ${outcomeVars.length} variable(s). Rows = segment; values = % (nominal) or mean (scale).`
+      const chart: ChartSpec | undefined =
+        table.length > 0 && table[0]
+          ? {
+              type: 'bar',
+              title: `Pivot: ${segmentLabel} by selected variables`,
+              data: table.map((r) => ({ ...r })),
+              xKey: 'Segment',
+              yKey: Object.keys(table[0]).find((k) => k !== 'Segment' && k !== 'Segment (n)') ?? 'Segment (n)',
+            }
+          : undefined
+      return {
+        testId: 'pivot',
+        testName: 'Custom pivot (segment × variables)',
+        table,
+        chart,
+        insight,
+        plainLanguage: `In practice: compare segments (${segmentLabel}) on the selected questions. Use percentages for categories and means for numeric items.`,
+        nextStep: 'Next step: switch to Means in the card to show means for scale variables; add or remove variables to compare.',
+        variablesAnalyzed,
+      }
+    }
+
     default:
       return {
         testId,
         testName: String(testId),
-        table: [{ Note: 'This test is not yet implemented.', Implemented: 'freq, desc, missing, crosstab, corr, spearman, ttest, anova, linreg, logreg, mann, paired, pca, goodness, onesamplet, pointbiserial' }],
+        table: [{ Note: 'This test is not yet implemented.', Implemented: 'freq, desc, missing, crosstab, corr, spearman, ttest, anova, linreg, logreg, mann, paired, pca, goodness, onesamplet, pointbiserial, pivot' }],
         insight: 'Not yet implemented. All Tier 1–3 tests and PCA are implemented.',
       }
   }
