@@ -430,7 +430,9 @@ function ReportView({
             ? freqFindings.indexOf(finding) + 1
             : undefined
         const questionLabel =
-          finding.result.testId === 'freq' && finding.result.variablesAnalyzed?.[0]?.label
+          finding.result.testId === 'freq'
+            ? finding.result.variablesAnalyzed?.[0]?.label
+            : undefined
         return (
           <FindingBlock
             key={index}
