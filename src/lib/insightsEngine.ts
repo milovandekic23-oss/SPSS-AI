@@ -2,7 +2,7 @@
  * Insights engine: HTML export and helpers for the v2 report (narratives, follow-ups, quality, contradictions live in insightsReport).
  */
 
-import type { ReportFinding, InsightsReport } from './insightsReport'
+import { groupFindingsByImportance, type InsightsReport, type ReportFinding } from './insightsReport'
 import type { TestResult } from './statsRunner'
 
 const TIER1_IDS: TestId[] = ['freq', 'desc', 'missing']
@@ -77,19 +77,24 @@ export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'
     .filter((v, i, a) => a.indexOf(v) === i)
     .join(', ')
 
-  const findingsHTML = findings
-    .map((f) => {
-      const tableHTML = renderTableHTML(f.result.table)
-      const warningsHTML =
-        f.warnings.length > 0
-          ? `<div class="warnings">${f.warnings.map((w) => `<p>⚠ ${escHtml(w)}</p>`).join('')}</div>`
-          : ''
-      const followUpHTML = f.followUp
-        ? `<p class="followup">💡 <strong>Follow-up:</strong> ${escHtml(f.followUp)}</p>`
-        : ''
-      return `
+  const sections = groupFindingsByImportance(findings)
+  const findingsHTML = sections
+    .map(
+      (sec) =>
+        `<h3 class="section-head">${escHtml(sec.sectionTitle)}</h3>` +
+        sec.findings
+          .map((f) => {
+            const tableHTML = renderTableHTML(f.result.table)
+            const warningsHTML =
+              f.warnings.length > 0
+                ? `<div class="warnings">${f.warnings.map((w) => `<p>⚠ ${escHtml(w)}</p>`).join('')}</div>`
+                : ''
+            const followUpHTML = f.followUp
+              ? `<p class="followup">💡 <strong>What next?</strong> ${escHtml(f.followUp)}</p>`
+              : ''
+            return `
         <div class="finding ${f.isKey ? 'key-finding' : ''}">
-          <h3>${escHtml(f.result.testName)}${f.isKey ? ' <span class="badge">Key Finding</span>' : ''}</h3>
+          <h4>${escHtml(f.result.testName)}${f.isKey ? ' <span class="badge">Main finding</span>' : ''}</h4>
           <p class="takeaway">${escHtml(f.mainTakeaway)}</p>
           <details><summary>Details (statistics &amp; table)</summary>
           <p class="narrative">${escHtml(f.narrative)}</p>
@@ -98,7 +103,9 @@ export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'
           </details>
           ${followUpHTML}
         </div>`
-    })
+          })
+          .join('\n')
+    )
     .join('\n')
 
   return `<!DOCTYPE html>
@@ -112,6 +119,8 @@ export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'
     h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
     h2 { font-size: 18px; font-weight: 700; margin: 32px 0 12px; border-bottom: 2px solid #1C35D4; padding-bottom: 6px; color: #1C35D4; }
     h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    h3.section-head { margin-top: 24px; color: #555; font-size: 14px; }
+    h4 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
     p { margin-bottom: 8px; }
     .meta { font-size: 12px; color: #666; margin-bottom: 32px; }
     .quality { padding: 12px 16px; border-left: 4px solid; margin-bottom: 24px; font-size: 13px; }
@@ -139,16 +148,16 @@ export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'
   <p class="meta">Dataset: <strong>${escHtml(datasetName)}</strong> &nbsp;|&nbsp; ${dataQuality.totalRows} rows, ${dataQuality.totalVariables} variables &nbsp;|&nbsp; Generated: ${escHtml(generatedAt)}</p>
 
   <div class="quality ${dataQuality.overallRating}">
-    <strong>Data Quality: ${dataQuality.overallRating.toUpperCase()}</strong>
-    ${dataQuality.smallSampleWarning ? '<br>⚠ Small sample (n &lt; 30) — interpret inferential results with caution.' : ''}
-    ${dataQuality.highMissingnessVars.length > 0 ? `<br>⚠ High missingness (&gt;20%): ${dataQuality.highMissingnessVars.map(escHtml).join(', ')}` : ''}
-    ${dataQuality.lowVarianceVars.length > 0 ? `<br>ℹ Low variance (&gt;90% one category): ${dataQuality.lowVarianceVars.map(escHtml).join(', ')}` : ''}
+    <strong>Can you trust this?</strong> Data quality is <strong>${dataQuality.overallRating.toUpperCase()}</strong>. Use this to judge how much to rely on the findings below.
+    ${dataQuality.smallSampleWarning ? '<br>Small sample (under 30) — interpret inferential results with caution.' : ''}
+    ${dataQuality.highMissingnessVars.length > 0 ? `<br>High missingness (over 20%): ${dataQuality.highMissingnessVars.map(escHtml).join(', ')}.` : ''}
+    ${dataQuality.lowVarianceVars.length > 0 ? `<br>Low variance (over 90% in one category): ${dataQuality.lowVarianceVars.map(escHtml).join(', ')}.` : ''}
   </div>
 
-  ${executiveSummary ? `<h2>Summary</h2><p class="takeaway">${escHtml(executiveSummary)}</p>` : ''}
+  ${executiveSummary ? `<h2>Summary</h2><p class="takeaway">${escHtml(executiveSummary)}</p><p>Full details and numbers are in the appendix below.</p>` : ''}
 
-  <h2>Key Findings</h2>
-  ${keyHeadlines.length > 0 ? `<ul>${keyFindingsList}</ul>` : '<p>No statistically significant findings detected.</p>'}
+  <h2>Main findings</h2>
+  ${keyHeadlines.length > 0 ? `<ul>${keyFindingsList}</ul>` : '<p>No main findings in this run.</p>'}
 
   <h2>Contradictions &amp; Consistency Checks</h2>
   ${contradictionsList}

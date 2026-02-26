@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import type { DatasetState } from '../types'
-import { runInsightsReport, getHeadline, groupFindingsByTheme, type InsightsReport, type ReportFinding, type DataQualitySummary } from '../lib/insightsReport'
+import { runInsightsReport, groupFindingsByImportance, type InsightsReport, type ReportFinding, type DataQualitySummary } from '../lib/insightsReport'
 import { exportReportHTML, openReportInNewTab, downloadReport } from '../lib/insightsEngine'
 import { runTest } from '../lib/statsRunner'
 import { useAI } from '../hooks/useAI'
@@ -343,8 +343,8 @@ function ReportView({
   loading: boolean
 }) {
   const { dataQuality, contradictions, executiveSummary } = report
-  const topTakeaways = report.findings.filter((f) => f.isKey).slice(0, 5)
-  const sections = groupFindingsByTheme(report.findings)
+  const mainFindings = report.findings.filter((f) => f.isKey).slice(0, 5)
+  const sections = groupFindingsByImportance(report.findings)
 
   return (
     <div style={{ marginTop: 24 }}>
@@ -362,6 +362,10 @@ function ReportView({
       )}
 
       <DataQualityBlock summary={dataQuality} />
+
+      <p style={{ ...styles.textBody, fontSize: 13, opacity: 0.85, marginBottom: 20 }}>
+        Short summary above. Expand any section for the full picture. Numbers and tables are in <strong>Details</strong> (appendix). Use <strong>Run this test to verify</strong> to check any result.
+      </p>
 
       {contradictions.length > 0 && (
         <div style={{ marginBottom: 24 }}>
@@ -388,11 +392,11 @@ function ReportView({
         </div>
       )}
 
-      {topTakeaways.length > 0 && (
+      {mainFindings.length > 0 && (
         <div style={{ marginBottom: 28 }}>
-          <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Top takeaways</h3>
+          <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Main findings</h3>
           <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6, ...styles.textBody }}>
-            {topTakeaways.map((f, i) => {
+            {mainFindings.map((f, i) => {
               const freqFindings = report.findings.filter((x) => x.result.testId === 'freq')
               const questionNumber =
                 f.result.testId === 'freq' ? freqFindings.indexOf(f) + 1 : undefined
@@ -422,7 +426,7 @@ function ReportView({
 
       <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Full report</h3>
       <p style={{ ...styles.textBody, opacity: 0.7, marginBottom: 16 }}>
-        Grouped by theme. Expand any section for the insight; open <strong>Details</strong> for statistics and tables. Use <strong>Run this test</strong> to verify any result.
+        Grouped by importance: <strong>Main findings</strong> first, then <strong>Other</strong>. Expand any section for the insight; open <strong>Details</strong> for statistics and tables (appendix).
       </p>
 
       {sections.map(({ sectionTitle, findings }) => (
@@ -512,15 +516,15 @@ function DataQualityBlock({ summary }: { summary: DataQualitySummary }) {
         ...styles.textBody,
       }}
     >
-      <strong>Data quality: {summary.overallRating}</strong>
+      <strong>Can you trust this?</strong> Data quality is <strong>{summary.overallRating}</strong>. Use this to judge how much to rely on the findings below.
       {summary.smallSampleWarning && (
-        <div style={{ marginTop: 4 }}>⚠ Small sample (n &lt; 30) — interpret inferential results with caution.</div>
+        <div style={{ marginTop: 6 }}>Small sample (under 30) — interpret inferential results with caution.</div>
       )}
       {summary.highMissingnessVars.length > 0 && (
-        <div style={{ marginTop: 4 }}>⚠ High missingness (&gt;20%): {summary.highMissingnessVars.join(', ')}</div>
+        <div style={{ marginTop: 6 }}>High missingness (over 20%): {summary.highMissingnessVars.join(', ')}.</div>
       )}
       {summary.lowVarianceVars.length > 0 && (
-        <div style={{ marginTop: 4 }}>ℹ Low variance (&gt;90% one category): {summary.lowVarianceVars.join(', ')}</div>
+        <div style={{ marginTop: 6 }}>Low variance (over 90% in one category): {summary.lowVarianceVars.join(', ')}.</div>
       )}
     </div>
   )
@@ -709,7 +713,7 @@ function FindingBlock({
         )}
         {followUp && (
           <p style={{ marginTop: 12, fontSize: 12, color: '#27ae60', fontStyle: 'italic', ...styles.textBody }}>
-            💡 <strong>Follow-up:</strong> {followUp}
+            💡 <strong>What next?</strong> {followUp}
           </p>
         )}
       </div>

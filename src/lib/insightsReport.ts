@@ -229,55 +229,114 @@ function getTheme(testId: TestId): string {
   }
 }
 
-/** One short human-centered sentence for the main view (no p-values or raw numbers). */
+/** One short human-centered sentence for the main view; includes one key number when helpful (client-friendly). */
 function generateMainTakeaway(result: TestResult): string {
-  const { testId, insight, plainLanguage } = result
+  const { testId, insight, plainLanguage, table } = result
+  const oneNumber = getOneKeyNumber(result)
+  const appendNumber = oneNumber ? ` (${oneNumber})` : ''
+
   if (plainLanguage) {
     const text = plainLanguage.replace(/^In practice:\s*/i, '').trim()
-    if (text.length < 120) return text
-    return text.slice(0, 117) + '…'
+    if (text.length < 140) return text
+    return text.slice(0, 137) + '…'
   }
   const isSig =
     /statistically significant/i.test(insight ?? '') &&
     !/not statistically significant|no significant/i.test(insight ?? '')
   switch (testId) {
     case 'freq': {
+      if (oneNumber && table && table.length > 0) {
+        const withPercent = table.filter((r) => 'Percent' in r && typeof r.Percent === 'number') as { Value: string; Percent: number }[]
+        if (withPercent.length > 0) {
+          const top = withPercent.reduce((a, b) => (a.Percent >= b.Percent ? a : b))
+          const pct = Math.round(Number(top.Percent))
+          const val = String(top.Value)
+          if (val === '(missing)') return `Most non-missing responses${appendNumber}.`
+          return `Most responses were "${val}" (about ${pct}%).`
+        }
+      }
       const first = (insight ?? '').split('.')[0]?.trim()
       return first ? `${first}. See details for full breakdown.` : 'Distribution of responses — see table for counts.'
     }
-    case 'desc':
-      return 'Summary of means and spread for numeric variables. Compare groups in the Associations section.'
+    case 'desc': {
+      const meanRow = table?.find((r) => 'Mean' in r && typeof r.Mean === 'number')
+      if (meanRow && oneNumber) return `Summary of numeric variables${appendNumber}.`
+      return 'Summary of means and spread for numeric variables. Compare groups in Main findings.'
+    }
     case 'missing':
       return 'Overview of missing data. Variables with high missingness are flagged for caution.'
     case 'corr':
     case 'spearman': {
-      if (isSig) return /negative/i.test(insight ?? '') ? 'There is a negative relationship between the two variables.' : 'There is a positive relationship between the two variables.'
+      if (isSig) {
+        const dir = /negative/i.test(insight ?? '') ? 'negative' : 'positive'
+        return `There is a ${dir} relationship between the two variables${appendNumber}.`
+      }
       return 'No clear linear relationship between the two variables.'
     }
     case 'ttest':
-      return isSig ? 'The two groups differ on this outcome.' : 'The two groups are similar on this outcome.'
+      return isSig ? `The two groups differ on this outcome${appendNumber}.` : 'The two groups are similar on this outcome.'
     case 'anova':
-      return isSig ? 'At least one group differs from the others.' : 'Group means are not significantly different.'
+      return isSig ? `At least one group differs from the others${appendNumber}.` : 'Group means are not significantly different.'
     case 'crosstab':
-      return isSig ? 'The two variables are associated — see the table for the pattern.' : 'No clear association between the two variables.'
+      return isSig ? `The two variables are associated — see the table for the pattern${appendNumber}.` : 'No clear association between the two variables.'
     case 'goodness':
     case 'onesamplet':
-      return (insight ?? '').split('.')[0] ?? result.testName
+      return ((insight ?? '').split('.')[0] ?? result.testName) + appendNumber
     case 'pointbiserial':
-      return isSig ? 'The binary and numeric variables are related.' : 'No clear association between the binary and numeric variable.'
+      return isSig ? `The binary and numeric variables are related${appendNumber}.` : 'No clear association between the binary and numeric variable.'
     case 'linreg':
-      return isSig ? 'The model helps explain the outcome; see details for strength and predictors.' : 'The regression model does not significantly explain the outcome.'
+      return isSig ? `The model helps explain the outcome${appendNumber}.` : 'The regression model does not significantly explain the outcome.'
     case 'logreg':
-      return (insight ?? '').split('.')[0] ?? 'Logistic regression result — see details for odds ratios.'
+      return ((insight ?? '').split('.')[0] ?? 'Logistic regression result — see details for odds ratios') + appendNumber
     case 'mann':
-      return isSig ? 'Groups differ when we look at ranks (non-parametric).' : 'No significant difference between groups (non-parametric).'
+      return isSig ? `Groups differ when we look at ranks (non-parametric)${appendNumber}.` : 'No significant difference between groups (non-parametric).'
     case 'paired':
-      return isSig ? 'Scores changed significantly between the two measurements.' : 'No significant average change between measurements.'
+      return isSig ? `Scores changed significantly between the two measurements${appendNumber}.` : 'No significant average change between measurements.'
     case 'pca':
       return 'Variance is spread across components; see details for how many to retain.'
     default:
-      return (insight ?? '').split('.')[0] ?? result.testName
+      return ((insight ?? '').split('.')[0] ?? result.testName) + appendNumber
   }
+}
+
+/** One key number for the main view (e.g. "about 45%", "about r = 0.4"). Plain language, rounded. */
+function getOneKeyNumber(result: TestResult): string | null {
+  const { testId, table, effectSize, effectSizeLabel } = result
+  if (testId === 'freq' && table && table.length > 0) {
+    const withPercent = table.filter((r) => 'Percent' in r && typeof r.Percent === 'number') as { Value: string; Percent: number }[]
+    if (withPercent.length > 0) {
+      const top = withPercent.reduce((a, b) => (a.Percent >= b.Percent ? a : b))
+      const pct = Math.round(Number(top.Percent))
+      return `about ${pct}% ${String(top.Value).toLowerCase()}`
+    }
+  }
+  if (testId === 'desc' && table && table.length > 0) {
+    const withMean = table.find((r) => 'Mean' in r && typeof r.Mean === 'number') as { Variable?: string; Mean?: number } | undefined
+    if (withMean && typeof withMean.Mean === 'number') return `mean about ${withMean.Mean.toFixed(1)}`
+  }
+  if ((testId === 'corr' || testId === 'spearman') && effectSize != null) {
+    const r = Math.abs(effectSize)
+    if (r <= 1) return `about r = ${effectSize.toFixed(2)}`
+  }
+  if (testId === 'ttest' && effectSize != null && effectSizeLabel === "Cohen's d") {
+    const d = Math.abs(effectSize)
+    if (d >= 0.8) return 'large effect'
+    if (d >= 0.5) return 'moderate effect'
+    if (d >= 0.2) return 'small effect'
+  }
+  if (testId === 'linreg' && effectSize != null && effectSizeLabel === 'R²') {
+    const pct = Math.round(effectSize * 100)
+    return `about ${pct}% of variance explained`
+  }
+  if (testId === 'crosstab' && effectSize != null && effectSizeLabel === "Cramér's V") {
+    if (effectSize >= 0.3) return 'strong association'
+    if (effectSize >= 0.1) return `about ${(effectSize * 100).toFixed(0)}% association`
+  }
+  if (testId === 'anova' && effectSize != null && effectSizeLabel === 'η²') {
+    const pct = Math.round(effectSize * 100)
+    return `about ${pct}% of variance between groups`
+  }
+  return null
 }
 
 // ─────────────────────────────────────────────
@@ -627,23 +686,17 @@ export function runInsightsReport(dataset: DatasetState): InsightsReport {
   }
 }
 
-/** Build 2–4 sentences in plain language from top findings (no raw statistics). */
+/** Build 2–4 sentences in plain language for clients (short, main findings only). */
 export function buildExecutiveSummary(findings: ReportFinding[]): string {
   if (findings.length === 0) return 'No analyses were run. Add variables and try again.'
-  const top = findings
-    .filter((f) => f.result.testId !== 'missing' || findings.some((x) => x.result.testId === 'missing'))
-    .slice(0, 8)
-  const notable = top.filter((f) => f.interestScore >= 5)
+  const mainFindings = findings.filter((f) => f.isKey).slice(0, 5)
   const lines: string[] = []
-  if (notable.length > 0) {
-    const first = notable[0]
-    lines.push(first.mainTakeaway)
-    if (notable.length >= 2) lines.push(notable[1].mainTakeaway)
+  if (mainFindings.length > 0) {
+    lines.push(mainFindings[0].mainTakeaway)
+    if (mainFindings.length >= 2) lines.push(mainFindings[1].mainTakeaway)
   }
-  if (lines.length === 0) lines.push(top[0].mainTakeaway)
-  const n = findings.length
-  if (n <= 5) lines.push(`The report includes ${n} finding${n === 1 ? '' : 's'} from your data.`)
-  else lines.push(`The report summarizes ${n} findings; expand any section for details or run the test yourself to verify.`)
+  if (lines.length === 0) lines.push(findings[0].mainTakeaway)
+  lines.push(`Full details and numbers are in the appendix below.`)
   return lines.join(' ')
 }
 
@@ -659,6 +712,20 @@ export function groupFindingsByTheme(findings: ReportFinding[]): ReportSection[]
   return order
     .filter((t) => byTheme.has(t))
     .map((sectionTitle) => ({ sectionTitle, findings: byTheme.get(sectionTitle)! }))
+}
+
+/** Group findings by importance for client-facing report: Main findings first, then Other. */
+export function groupFindingsByImportance(findings: ReportFinding[]): ReportSection[] {
+  const main: ReportFinding[] = []
+  const other: ReportFinding[] = []
+  for (const f of findings) {
+    if (f.isKey) main.push(f)
+    else other.push(f)
+  }
+  const sections: ReportSection[] = []
+  if (main.length > 0) sections.push({ sectionTitle: 'Main findings', findings: main })
+  if (other.length > 0) sections.push({ sectionTitle: 'Other', findings: other })
+  return sections
 }
 
 /** One-line headline for a result (for key findings list and expandable summary). Prefer context + takeaway. */
