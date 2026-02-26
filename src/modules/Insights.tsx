@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import type { DatasetState } from '../types'
-import { runInsightsReport, getHeadline, type InsightsReport, type ReportFinding, type DataQualitySummary } from '../lib/insightsReport'
+import { runInsightsReport, getHeadline, groupFindingsByTheme, type InsightsReport, type ReportFinding, type DataQualitySummary } from '../lib/insightsReport'
 import { exportReportHTML, openReportInNewTab, downloadReport } from '../lib/insightsEngine'
 import { runTest } from '../lib/statsRunner'
 import { useAI } from '../hooks/useAI'
@@ -342,22 +342,24 @@ function ReportView({
   onRegenerate: () => void
   loading: boolean
 }) {
-  const keyFindings = report.findings.filter((f) => f.isKey)
-  const { dataQuality, contradictions } = report
+  const { dataQuality, contradictions, executiveSummary } = report
+  const topTakeaways = report.findings.filter((f) => f.isKey).slice(0, 5)
+  const sections = groupFindingsByTheme(report.findings)
 
   return (
     <div style={{ marginTop: 24 }}>
-      <div
-        style={{
-          ...styles.chartContainer,
-          borderLeft: `4px solid ${theme.colors.accent}`,
-          marginBottom: 24,
-        }}
-      >
-        <p style={{ margin: 0, ...styles.textBody }}>
-          <strong>What you’re seeing:</strong> The report below is built from analyses run on your data. Important findings are listed first; expand any section for the full table, chart, and interpretation. Every insight comes from computed results only — nothing is fabricated.
-        </p>
-      </div>
+      {executiveSummary && (
+        <div
+          style={{
+            ...styles.chartContainer,
+            borderLeft: `4px solid ${theme.colors.accent}`,
+            marginBottom: 24,
+          }}
+        >
+          <h3 style={{ ...styles.suggestionTitle, fontSize: 16, marginBottom: 8 }}>Summary</h3>
+          <p style={{ margin: 0, ...styles.textBody, lineHeight: 1.6 }}>{executiveSummary}</p>
+        </div>
+      )}
 
       <DataQualityBlock summary={dataQuality} />
 
@@ -386,26 +388,26 @@ function ReportView({
         </div>
       )}
 
-      {keyFindings.length > 0 && (
+      {topTakeaways.length > 0 && (
         <div style={{ marginBottom: 28 }}>
-          <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Key findings</h3>
+          <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Top takeaways</h3>
           <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.6, ...styles.textBody }}>
-            {keyFindings.map((f, i) => {
+            {topTakeaways.map((f, i) => {
               const freqFindings = report.findings.filter((x) => x.result.testId === 'freq')
               const questionNumber =
                 f.result.testId === 'freq' ? freqFindings.indexOf(f) + 1 : undefined
               const questionLabel = f.result.testId === 'freq' && f.result.variablesAnalyzed?.[0]?.label
-              const displayHeadline =
+              const displayText =
                 questionNumber != null && questionLabel
                   ? `${questionNumber}. ${questionLabel}`
-                  : getHeadline(f.result)
+                  : f.mainTakeaway
               return (
                 <li key={i} style={{ marginBottom: 6 }}>
                   {f.validation.consistent ? (
-                    <span>{displayHeadline}</span>
+                    <span>{displayText}</span>
                   ) : (
                     <span>
-                      {displayHeadline}
+                      {displayText}
                       <span style={{ color: '#e67e22', fontSize: 12, marginLeft: 6 }}>
                         (Check details: {f.validation.issues.join('; ')})
                       </span>
@@ -420,30 +422,37 @@ function ReportView({
 
       <h3 style={{ ...styles.suggestionTitle, fontSize: 20, marginBottom: 12 }}>Full report</h3>
       <p style={{ ...styles.textBody, opacity: 0.7, marginBottom: 16 }}>
-        Expand any section to see the narrative, table, chart, and follow-up suggestion.
+        Grouped by theme. Expand any section for the insight; open <strong>Details</strong> for statistics and tables. Use <strong>Run this test</strong> to verify any result.
       </p>
 
-      {report.findings.map((finding, index) => {
-        const freqFindings = report.findings.filter((f) => f.result.testId === 'freq')
-        const questionNumber =
-          finding.result.testId === 'freq'
-            ? freqFindings.indexOf(finding) + 1
-            : undefined
-        const questionLabel =
-          finding.result.testId === 'freq'
-            ? finding.result.variablesAnalyzed?.[0]?.label
-            : undefined
-        return (
-          <FindingBlock
-            key={index}
-            finding={finding}
-            dataset={dataset}
-            apiKey={apiKey}
-            questionNumber={questionNumber}
-            questionLabel={questionLabel}
-          />
-        )
-      })}
+      {sections.map(({ sectionTitle, findings }) => (
+        <div key={sectionTitle} style={{ marginBottom: 24 }}>
+          <h4 style={{ ...styles.textLabel, fontSize: 14, marginBottom: 10, color: theme.colors.textMuted }}>
+            {sectionTitle}
+          </h4>
+          {findings.map((finding, index) => {
+            const freqFindings = report.findings.filter((f) => f.result.testId === 'freq')
+            const questionNumber =
+              finding.result.testId === 'freq'
+                ? freqFindings.indexOf(finding) + 1
+                : undefined
+            const questionLabel =
+              finding.result.testId === 'freq'
+                ? finding.result.variablesAnalyzed?.[0]?.label
+                : undefined
+            return (
+              <FindingBlock
+                key={`${sectionTitle}-${index}`}
+                finding={finding}
+                dataset={dataset}
+                apiKey={apiKey}
+                questionNumber={questionNumber}
+                questionLabel={questionLabel}
+              />
+            )
+          })}
+        </div>
+      ))}
 
       <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button
@@ -530,9 +539,11 @@ function FindingBlock({
   questionNumber?: number
   questionLabel?: string
 }) {
-  const { result, validation, narrative, followUp, warnings, interestScore } = finding
+  const { result, validation, mainTakeaway, narrative, followUp, warnings, interestScore } = finding
   const [aiInterpretation, setAiInterpretation] = useState<string | null>(null)
   const [loadingInterp, setLoadingInterp] = useState(false)
+  const [verificationResult, setVerificationResult] = useState<TestResult | null>(null)
+  const [verificationLoading, setVerificationLoading] = useState(false)
   const { interpretResult } = useAI(apiKey, dataset)
   const hasApiKey = apiKey.length > 0
 
@@ -548,10 +559,21 @@ function FindingBlock({
     setLoadingInterp(false)
   }, [hasApiKey, loadingInterp, interpretResult, result])
 
-  const headline = getHeadline(result)
-  const summaryLabel = validation.consistent
-    ? headline
-    : `${headline} — ⚠ Check result`
+  const handleRunTest = useCallback(() => {
+    setVerificationLoading(true)
+    setVerificationResult(null)
+    const varNames = result.variablesAnalyzed?.map((v) => v.name).filter((n): n is string => !!n) ?? []
+    const reRun = runTest(result.testId, dataset, varNames.length > 0 ? varNames : undefined)
+    setVerificationResult(reRun ?? null)
+    setVerificationLoading(false)
+  }, [result.testId, result.variablesAnalyzed, dataset])
+
+  const summaryLabel =
+    questionNumber != null
+      ? `${questionNumber}. ${questionLabel ?? mainTakeaway}`
+      : validation.consistent
+        ? mainTakeaway
+        : `${mainTakeaway} — ⚠ Check result`
 
   return (
     <details
@@ -575,8 +597,7 @@ function FindingBlock({
         }}
       >
         <span>
-          <span style={{ marginRight: 8 }}>▸</span>{' '}
-          {questionNumber != null ? `${questionNumber}. ${questionLabel ?? headline}` : summaryLabel}
+          <span style={{ marginRight: 8 }}>▸</span> {summaryLabel}
         </span>
         {interestScore >= 5 && (
           <span
@@ -597,11 +618,9 @@ function FindingBlock({
         )}
       </summary>
       <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${theme.colors.border}` }}>
-        {narrative && (
-          <p style={{ marginBottom: 12, fontSize: 13, color: theme.colors.textMuted ?? '#555', ...styles.textBody }}>
-            {narrative}
-          </p>
-        )}
+        <p style={{ marginBottom: 12, fontSize: 14, ...styles.textBody }}>
+          {mainTakeaway}
+        </p>
         {warnings.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             {warnings.map((w, i) => (
@@ -609,6 +628,49 @@ function FindingBlock({
                 ⚠ {w}
               </p>
             ))}
+          </div>
+        )}
+        <details style={{ marginBottom: 12 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 12, color: theme.colors.textMuted ?? '#555', ...styles.textBody }}>
+            Details (statistics & table)
+          </summary>
+          <div style={{ marginTop: 10, paddingLeft: 8, borderLeft: `2px solid ${theme.colors.border}` }}>
+            {narrative && (
+              <p style={{ marginBottom: 10, fontSize: 13, color: theme.colors.textMuted ?? '#555', ...styles.textBody }}>
+                {narrative}
+              </p>
+            )}
+            {(result.keyStat ?? result.effectSize != null) && (
+              <p style={{ marginBottom: 8, fontSize: 12, fontFamily: 'monospace', color: theme.colors.textMuted ?? '#555' }}>
+                {result.keyStat}
+                {result.effectSize != null && result.effectSizeLabel && (
+                  <span> · {result.effectSizeLabel} = {result.effectSize.toFixed(3)}</span>
+                )}
+              </p>
+            )}
+            <TestResultPanel result={result} />
+          </div>
+        </details>
+        <button
+          type="button"
+          onClick={handleRunTest}
+          disabled={verificationLoading}
+          style={{
+            ...styles.btn,
+            marginTop: 0,
+            marginBottom: 12,
+            padding: '6px 14px',
+            fontSize: 12,
+            opacity: verificationLoading ? 0.6 : 1,
+            cursor: verificationLoading ? 'default' : 'pointer',
+          }}
+        >
+          {verificationLoading ? 'Running test…' : 'Run this test to verify'}
+        </button>
+        {verificationResult && (
+          <div style={{ marginTop: 8, marginBottom: 12 }}>
+            <strong style={{ fontSize: 12, ...styles.textLabel }}>Verification result</strong>
+            <TestResultPanel result={verificationResult} />
           </div>
         )}
         {hasApiKey && !aiInterpretation && (
@@ -645,7 +707,6 @@ function FindingBlock({
             <p style={{ margin: '6px 0 0' }}>{aiInterpretation}</p>
           </div>
         )}
-        <TestResultPanel result={result} />
         {followUp && (
           <p style={{ marginTop: 12, fontSize: 12, color: '#27ae60', fontStyle: 'italic', ...styles.textBody }}>
             💡 <strong>Follow-up:</strong> {followUp}

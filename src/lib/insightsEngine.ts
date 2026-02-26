@@ -58,9 +58,9 @@ function renderTableHTML(table: Record<string, string | number>[] | undefined): 
  * Generate full APA-style HTML report from a v2 InsightsReport (data quality, contradictions, narratives, follow-ups).
  */
 export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'): string {
-  const { findings, keyHeadlines, contradictions, dataQuality, generatedAt } = report
+  const { findings, keyHeadlines, executiveSummary, contradictions, dataQuality, generatedAt } = report
 
-  const keyFindingsList = keyHeadlines.map((h) => `<li>${escHtml(h)}</li>`).join('\n')
+  const keyFindingsList = keyHeadlines.slice(0, 5).map((h) => `<li>${escHtml(h)}</li>`).join('\n')
   const contradictionsList =
     contradictions.length > 0
       ? contradictions
@@ -90,9 +90,12 @@ export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'
       return `
         <div class="finding ${f.isKey ? 'key-finding' : ''}">
           <h3>${escHtml(f.result.testName)}${f.isKey ? ' <span class="badge">Key Finding</span>' : ''}</h3>
+          <p class="takeaway">${escHtml(f.mainTakeaway)}</p>
+          <details><summary>Details (statistics &amp; table)</summary>
           <p class="narrative">${escHtml(f.narrative)}</p>
           ${warningsHTML}
           ${tableHTML}
+          </details>
           ${followUpHTML}
         </div>`
     })
@@ -141,6 +144,8 @@ export function exportReportHTML(report: InsightsReport, datasetName = 'Dataset'
     ${dataQuality.highMissingnessVars.length > 0 ? `<br>⚠ High missingness (&gt;20%): ${dataQuality.highMissingnessVars.map(escHtml).join(', ')}` : ''}
     ${dataQuality.lowVarianceVars.length > 0 ? `<br>ℹ Low variance (&gt;90% one category): ${dataQuality.lowVarianceVars.map(escHtml).join(', ')}` : ''}
   </div>
+
+  ${executiveSummary ? `<h2>Summary</h2><p class="takeaway">${escHtml(executiveSummary)}</p>` : ''}
 
   <h2>Key Findings</h2>
   ${keyHeadlines.length > 0 ? `<ul>${keyFindingsList}</ul>` : '<p>No statistically significant findings detected.</p>'}
